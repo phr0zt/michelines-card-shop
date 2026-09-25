@@ -81,6 +81,7 @@ export function createAuth(opts: { password: string; secret: string }) {
     const given = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!crypto.timingSafeEqual(sha256(given), sha256(opts.password))) {
       failures.hit('all');
+      console.warn(`Failed admin sign-in from ${ip}`);
       throw new HttpError(401, 'Wrong password');
     }
     limiter.reset(ip);

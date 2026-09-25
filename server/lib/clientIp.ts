@@ -9,7 +9,8 @@ import type { Request } from 'express';
 export function clientIp(req: Request): string {
   const header = req.app.get('client ip header') as string | undefined;
   if (header) {
-    const value = req.get(header)?.split(',')[0]?.trim();
+    // A proxy that appends to the header puts the address it saw last.
+    const value = req.get(header)?.split(',').at(-1)?.trim();
     if (value) return value;
   }
   return req.ip ?? 'unknown';
