@@ -172,6 +172,29 @@ export interface Purchase {
   updated_at: string;
 }
 
+export interface PurchaseStats {
+  cards: number;
+  units: number;
+  sold_units: number;
+  revenue_cents: number;
+  profit_cents: number;
+  remaining_value_cents: number;
+}
+
+export interface PurchaseDetail extends Purchase {
+  stats: PurchaseStats;
+}
+
+export interface NavCounts {
+  drafts: number;
+  inquiries_new: number;
+  inquiries_due: number;
+  to_ship: number;
+  ai_queued: number;
+  ai_running: number;
+  sold_still_listed: number;
+}
+
 export interface Platform {
   id: number;
   name: string;

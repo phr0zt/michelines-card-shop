@@ -132,6 +132,7 @@ export function listInquiries(
   const clauses: string[] = [];
   const params: unknown[] = [];
   if (query.status === 'open') clauses.push(`i.status IN (${OPEN_SQL})`);
+  else if (query.status === 'done') clauses.push("i.status IN ('declined', 'closed')");
   else if ((INQUIRY_STATUSES as readonly string[]).includes(query.status)) {
     clauses.push('i.status = ?');
     params.push(query.status);

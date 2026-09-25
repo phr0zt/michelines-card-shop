@@ -14,6 +14,7 @@ import {
   createPurchase,
   deletePurchase,
   getPurchase,
+  getPurchaseDetail,
   listPurchases,
   previewAllocation,
   unassignCards,
@@ -84,7 +85,7 @@ export function recordRoutes(ctx: AppContext): Router {
     res.status(201).json(createPurchase(db, req.body ?? {}));
   });
   r.get('/purchases/:id', (req, res) => {
-    res.json(getPurchase(db, idParam(req)));
+    res.json(getPurchaseDetail(db, idParam(req)));
   });
   r.patch('/purchases/:id', (req, res) => {
     res.json(updatePurchase(db, idParam(req), req.body ?? {}));

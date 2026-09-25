@@ -8,7 +8,7 @@ if (fs.existsSync('.env')) process.loadEnvFile('.env');
 const port = Number(process.env.PORT ?? 3001);
 const dataDir = path.resolve(process.env.DATA_DIR ?? './data');
 const adminPassword = process.env.ADMIN_PASSWORD ?? '';
-const webDir = path.join(import.meta.dirname, 'web');
+const webDir = process.env.WEB_DIR ? path.resolve(process.env.WEB_DIR) : path.join(import.meta.dirname, 'web');
 
 const { app, ctx, close } = createApp({
   dataDir,

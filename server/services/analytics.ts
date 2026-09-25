@@ -150,9 +150,9 @@ export function overview(db: Db, from: string, to: string): Overview {
 
   const days = db
     .prepare(
-      `SELECT AVG(julianday(s.sold_on) - julianday(COALESCE(
+      `SELECT AVG(MAX(0, julianday(s.sold_on) - julianday(COALESCE(
            (SELECT MIN(l.listed_at) FROM listings l WHERE l.card_id = s.card_id AND l.listed_at IS NOT NULL),
-           substr(c.created_at, 1, 10)))) AS d
+           substr(c.created_at, 1, 10))))) AS d
        FROM sales s JOIN cards c ON c.id = s.card_id WHERE s.sold_on >= ? AND s.sold_on <= ?`,
     )
     .get(from, to) as { d: number | null };
@@ -283,9 +283,9 @@ export function byPlatform(db: Db, from: string, to: string): PlatformStat[] {
   }
   const days = db
     .prepare(
-      `SELECT s.platform_id AS pid, AVG(julianday(s.sold_on) - julianday(COALESCE(
+      `SELECT s.platform_id AS pid, AVG(MAX(0, julianday(s.sold_on) - julianday(COALESCE(
            (SELECT MIN(l.listed_at) FROM listings l WHERE l.card_id = s.card_id AND l.listed_at IS NOT NULL),
-           substr(c.created_at, 1, 10)))) AS d
+           substr(c.created_at, 1, 10))))) AS d
        FROM sales s JOIN cards c ON c.id = s.card_id
        WHERE s.sold_on >= ? AND s.sold_on <= ? AND s.platform_id IS NOT NULL GROUP BY s.platform_id`,
     )

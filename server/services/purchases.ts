@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { COST_ALLOCATION_METHODS, type CostAllocationMethod } from '../../shared/constants';
 import { allocateCents, formatCents } from '../../shared/money';
-import type { AllocationPreview, Purchase } from '../../shared/types';
+import type { AllocationPreview, Purchase, PurchaseDetail } from '../../shared/types';
 import type { Db } from '../db';
 import { badRequest, notFound } from '../lib/http';
 import { isIsoDate, nowIso, today } from '../lib/time';
@@ -42,6 +42,37 @@ export function getPurchase(db: Db, id: number): Purchase {
   const row = db.prepare(`${PURCHASE_SQL} WHERE p.id = ?`).get(id) as Record<string, unknown> | undefined;
   if (!row) throw notFound('Purchase not found');
   return purchaseFromRow(row);
+}
+
+/** How a lot is paying off: what its cards sold for, the profit, and what's left. */
+export function getPurchaseDetail(db: Db, id: number): PurchaseDetail {
+  const purchase = getPurchase(db, id);
+  const inv = db
+    .prepare(
+      `SELECT COUNT(*) AS cards, COALESCE(SUM(quantity), 0) AS units, COALESCE(SUM(quantity_sold), 0) AS sold_units,
+         COALESCE(SUM(COALESCE(market_value_cents, 0) * (quantity - quantity_sold)), 0) AS remaining_value_cents
+       FROM cards WHERE purchase_id = ?`,
+    )
+    .get(id) as { cards: number; units: number; sold_units: number; remaining_value_cents: number };
+  const sales = db
+    .prepare(
+      `SELECT COALESCE(SUM(s.sale_price_cents + s.shipping_charged_cents), 0) AS revenue,
+         COALESCE(SUM(s.sale_price_cents + s.shipping_charged_cents - s.shipping_cost_cents - s.fees_cents - s.other_costs_cents), 0) AS after_costs
+       FROM sales s JOIN cards c ON c.id = s.card_id WHERE c.purchase_id = ?`,
+    )
+    .get(id) as { revenue: number; after_costs: number };
+  return {
+    ...purchase,
+    stats: {
+      cards: inv.cards,
+      units: inv.units,
+      sold_units: inv.sold_units,
+      revenue_cents: sales.revenue,
+      // Profit on the lot as a whole: sale proceeds minus selling costs minus what the lot cost.
+      profit_cents: sales.after_costs - purchase.total_cost_cents,
+      remaining_value_cents: inv.remaining_value_cents,
+    },
+  };
 }
 
 export function listPurchases(db: Db): Purchase[] {
