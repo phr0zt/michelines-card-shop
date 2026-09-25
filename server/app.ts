@@ -31,6 +31,8 @@ export interface AppOptions {
   storageWarning?: string | null;
   /** Express "trust proxy" setting: how many reverse proxies sit in front (default: none). */
   trustProxy?: boolean | number | string;
+  /** Header the host's proxy puts the visitor's address in, e.g. X-Real-IP (used for rate limits). */
+  clientIpHeader?: string;
 }
 
 /** A random secret persisted next to the database, so logins survive restarts. */
@@ -78,6 +80,7 @@ export function createApp(opts: AppOptions) {
   app.disable('x-powered-by');
   // Only trust X-Forwarded-For from proxies we know are there; otherwise clients could fake their IP.
   app.set('trust proxy', opts.trustProxy ?? false);
+  app.set('client ip header', opts.clientIpHeader ?? '');
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');

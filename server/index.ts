@@ -16,11 +16,14 @@ const storageWarning =
     ? 'No Railway volume is attached, so cards and photos will be erased on the next deploy. Add a volume to this service (mount path /data) in Railway.'
     : null;
 const adminPassword = process.env.ADMIN_PASSWORD ?? '';
-// Visitor IPs (for rate limits) come from X-Forwarded-For only when a proxy we trust adds it.
-// Railway has exactly one proxy in front; elsewhere set TRUST_PROXY to the number of proxies.
+// Visitor IPs (for rate limits) must come from something clients can't fake. Railway's proxy
+// passes X-Forwarded-For through untouched but sets X-Real-IP itself; elsewhere set
+// CLIENT_IP_HEADER, or TRUST_PROXY to the number of proxies that append to X-Forwarded-For.
+const onRailway = Boolean(process.env.RAILWAY_PROJECT_ID);
+const clientIpHeader = process.env.CLIENT_IP_HEADER?.trim() || (onRailway ? 'X-Real-IP' : undefined);
 function trustProxySetting(raw: string | undefined): boolean | number | string {
   const value = raw?.trim();
-  if (!value) return process.env.RAILWAY_PROJECT_ID ? 1 : false;
+  if (!value) return onRailway ? 1 : false; // on Railway, for X-Forwarded-Proto (secure cookies)
   if (/^\d+$/.test(value)) return Number(value);
   if (value === 'true' || value === 'false') return value === 'true';
   return value; // proxy addresses, e.g. "loopback, 10.0.0.0/8"
@@ -35,6 +38,7 @@ const { app, ctx, close } = createApp({
   webDir,
   storageWarning,
   trustProxy,
+  clientIpHeader,
 });
 
 if (storageWarning) console.warn(`⚠ ${storageWarning}`);

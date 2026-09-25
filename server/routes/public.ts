@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { AppContext } from '../context';
+import { clientIp } from '../lib/clientIp';
 import { HttpError, parse } from '../lib/http';
 import { createRateLimiter } from '../lib/rateLimit';
 import { createPublicInquiry, getPublicCard, listPublicCards, publicQuerySchema, publicStore } from '../services/public';
@@ -19,7 +20,7 @@ export function publicRoutes(ctx: AppContext): Router {
     res.set('Cache-Control', 'no-cache').json(getPublicCard(db, String(req.params.sku)));
   });
   r.post('/public/cards/:sku/inquiries', (req, res) => {
-    if (!inquiryLimiter.hit(req.ip ?? 'unknown')) {
+    if (!inquiryLimiter.hit(clientIp(req))) {
       throw new HttpError(429, 'Thanks! We already got a few messages from you — we’ll reply soon.');
     }
     res.status(201).json(createPublicInquiry(db, String(req.params.sku), req.body ?? {}));

@@ -75,7 +75,8 @@ Other hosts: build the image (`docker build -t card-shop .`), run it with a pers
 | `PORT` | no | HTTP port (default 3001). |
 | `SESSION_SECRET` | no | Signs login cookies. Generated and saved in `DATA_DIR` if not set. |
 | `ANTHROPIC_MODEL` | no | Overrides the model chosen in Settings. |
-| `TRUST_PROXY` | no | How many reverse proxies sit in front of the app, so sign-in limits see each visitor's real address. Automatic on Railway (1). Set it if you add something like Cloudflare in front (e.g. `2`); leave it unset when nothing is in front. |
+| `CLIENT_IP_HEADER` | no | Header your host's proxy puts each visitor's real address in, so sign-in and message limits can't be dodged. Automatic on Railway (`X-Real-IP`). Behind Cloudflare use `CF-Connecting-IP`. |
+| `TRUST_PROXY` | no | How many reverse proxies sit in front of the app (for HTTPS detection, and for visitor addresses when `CLIENT_IP_HEADER` isn't set). Automatic on Railway (1); leave unset when nothing is in front. |
 
 ## About the AI
 

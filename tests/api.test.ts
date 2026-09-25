@@ -55,6 +55,15 @@ describe('auth', () => {
     await request(t.app).post('/api/auth/login').set('X-Forwarded-For', '10.0.0.99').send({ password: 'nope' }).expect(429);
   });
 
+  it("reads visitors' addresses from the host's header when there is one (Railway: X-Real-IP)", async () => {
+    t = makeTestApp(null, { trustProxy: 1, clientIpHeader: 'X-Real-IP' });
+    const attempt = (realIp: string, forwarded: string) =>
+      request(t!.app).post('/api/auth/login').set('X-Real-IP', realIp).set('X-Forwarded-For', forwarded).send({ password: 'nope' });
+    for (let i = 0; i < 10; i++) await attempt('198.51.100.7', `10.0.0.${i}`).expect(401);
+    await attempt('198.51.100.7', '10.0.0.99').expect(429);
+    await attempt('198.51.100.8', '10.0.0.99').expect(401);
+  });
+
   it('health check and public endpoints need no login', async () => {
     t = makeTestApp();
     await request(t.app).get('/api/health').expect(200);

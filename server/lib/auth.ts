@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
+import { clientIp } from './clientIp';
 import { HttpError } from './http';
 import { createRateLimiter } from './rateLimit';
 
@@ -69,7 +70,7 @@ export function createAuth(opts: { password: string; secret: string }) {
   }
 
   function login(req: Request, res: Response): void {
-    const ip = req.ip ?? 'unknown';
+    const ip = clientIp(req);
     if (!opts.password) {
       throw new HttpError(503, 'No admin password is set. Add ADMIN_PASSWORD to the server environment and restart.');
     }
