@@ -6,6 +6,7 @@ import type { AppContext } from './context';
 import { openDb } from './db';
 import { createAuth } from './lib/auth';
 import { errorHandler } from './lib/http';
+import { setTimeZone } from './lib/time';
 import { analyticsRoutes } from './routes/analytics';
 import { cardRoutes } from './routes/cards';
 import { exportRoutes } from './routes/exports';
@@ -15,6 +16,7 @@ import { settingsRoutes } from './routes/settings';
 import { createAiClient, type AiClient } from './services/ai/client';
 import { JobRunner } from './services/ai/jobs';
 import { ImageStore } from './services/images';
+import { getSettings } from './services/settings';
 
 export interface AppOptions {
   dataDir: string;
@@ -62,6 +64,7 @@ const CSP = [
 export function createApp(opts: AppOptions) {
   fs.mkdirSync(opts.dataDir, { recursive: true });
   const db = openDb(path.join(opts.dataDir, 'cards.db'));
+  setTimeZone(getSettings(db).time_zone);
   const images = new ImageStore(path.join(opts.dataDir, 'uploads'));
   const client = opts.aiClient === undefined ? createAiClient() : opts.aiClient;
   const jobs = new JobRunner(db, images, client, opts.aiConcurrency ?? 2);

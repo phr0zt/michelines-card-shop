@@ -69,6 +69,33 @@ function SettingsSection<K extends keyof Settings>({
   );
 }
 
+const COMMON_TIME_ZONES = [
+  'America/St_Johns',
+  'America/Halifax',
+  'America/Moncton',
+  'America/Toronto',
+  'America/Winnipeg',
+  'America/Regina',
+  'America/Edmonton',
+  'America/Vancouver',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+];
+
+/** Canadian and US zones first, then every other zone the browser knows. */
+function timeZoneOptions(current: string): string[] {
+  let all: string[] = [];
+  try {
+    all = Intl.supportedValuesOf('timeZone');
+  } catch {
+    // older browsers: the common list is enough
+  }
+  const rest = all.filter((tz) => !COMMON_TIME_ZONES.includes(tz));
+  return [...new Set([current, ...COMMON_TIME_ZONES, ...rest])].filter(Boolean);
+}
+
 export default function SettingsPage() {
   const settings = useSettings();
   if (settings.isLoading) return <PageSpinner />;
@@ -136,11 +163,25 @@ export default function SettingsPage() {
           )}
         </SettingsSection>
 
-        <SettingsSection id="money" title="Money & inventory codes" settings={s} keys={['currency', 'locale', 'usd_exchange_rate', 'sku_prefix']}>
+        <SettingsSection
+          id="money"
+          title="Money, dates & inventory codes"
+          settings={s}
+          keys={['currency', 'locale', 'time_zone', 'usd_exchange_rate', 'sku_prefix']}
+        >
           {({ values, set }) => (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <TextField label="Currency" value={values.currency} onChange={(e) => set('currency', e.target.value.toUpperCase())} maxLength={3} hint="3-letter code, e.g. CAD or USD" />
               <TextField label="Number format" value={values.locale} onChange={(e) => set('locale', e.target.value)} hint="e.g. en-CA, fr-CA, en-US" />
+              <Field label="Time zone" htmlFor="set-tz" hint="Decides when “today” starts for follow-ups, sales dates and reports.">
+                <Select id="set-tz" value={values.time_zone} onChange={(e) => set('time_zone', e.target.value)}>
+                  {timeZoneOptions(values.time_zone).map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz.replace(/_/g, ' ')}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
               <TextField
                 label={`${values.currency || 'CAD'} per 1 USD`}
                 type="number"

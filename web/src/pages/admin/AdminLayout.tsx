@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
   BarChart3,
@@ -21,8 +21,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import { ButtonLink } from '../../components/ui/Button';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { Button, ButtonLink } from '../../components/ui/Button';
 import { Alert, PageSpinner } from '../../components/ui/Feedback';
 import { api } from '../../lib/api';
 import { FormatProvider } from '../../lib/format';
@@ -247,7 +247,16 @@ function AdminShell() {
               {system.storage_warning}
             </Alert>
           )}
-          <Outlet />
+          <ErrorBoundary
+            resetKey={location.pathname}
+            action={
+              <Button size="sm" variant="ghost" onClick={() => navigate('/admin/settings')}>
+                Open Settings
+              </Button>
+            }
+          >
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </FormatProvider>

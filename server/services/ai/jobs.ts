@@ -15,7 +15,12 @@ import { friendlyAiError } from './errors';
 import { applyIdentification, runIdentification } from './identify';
 import { runPricing } from './pricing';
 
+/** The latest failed job per card and task, with nothing newer since: the ones worth retrying. */
+export const OPEN_FAILED_JOBS = `SELECT j.id FROM ai_jobs j WHERE j.status = 'error' AND NOT EXISTS (
+  SELECT 1 FROM ai_jobs k WHERE k.card_id = j.card_id AND k.kind = j.kind AND k.id > j.id)`;
+
 export interface JobOptions {
+  /** true replaces every field, false fills blanks only; unset decides by card (see applyIdentification). */
   overwrite?: boolean;
   categoryHint?: string;
   /** Queue market research after identification (defaults to the Settings switch). */
@@ -76,10 +81,17 @@ export class JobRunner {
     return job;
   }
 
+  /**
+   * Re-queues the latest failure per card and task (older attempts at the same
+   * thing are left alone). A retried identification no longer forces
+   * "replace everything", so edits made since the failure are kept.
+   */
   retryFailed(): number {
     const n = this.db
       .prepare(
-        "UPDATE ai_jobs SET status = 'queued', error = NULL, started_at = NULL, finished_at = NULL WHERE status = 'error'",
+        `UPDATE ai_jobs SET status = 'queued', error = NULL, started_at = NULL, finished_at = NULL,
+           options_json = json_remove(options_json, '$.overwrite')
+         WHERE id IN (${OPEN_FAILED_JOBS})`,
       )
       .run().changes;
     this.kick();
@@ -170,7 +182,7 @@ export class JobRunner {
           categoryHint: options.categoryHint,
         });
         if (this.db.prepare('SELECT 1 FROM cards WHERE id = ?').get(job.card_id)) {
-          applyIdentification(this.db, job.card_id, out.identification, Boolean(options.overwrite));
+          applyIdentification(this.db, job.card_id, out.identification, options.overwrite);
         }
         this.finish(job.id, 'done', out.model, out.usage);
         const thenPrice = options.thenPrice ?? settings.ai_auto_price;
@@ -201,10 +213,10 @@ export class JobRunner {
         `SELECT
            SUM(status = 'queued') AS queued,
            SUM(status = 'running') AS running,
-           SUM(status = 'error' AND finished_at >= ?) AS failed
+           SUM(id IN (${OPEN_FAILED_JOBS})) AS failed
          FROM ai_jobs`,
       )
-      .get(new Date(Date.now() - 7 * 86_400_000).toISOString()) as { queued: number | null; running: number | null; failed: number | null };
+      .get() as { queued: number | null; running: number | null; failed: number | null };
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);

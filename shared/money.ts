@@ -22,6 +22,15 @@ export function centsToInput(cents: number | null | undefined): string {
 
 const formatters = new Map<string, Intl.NumberFormat>();
 
+/** A language tag Intl accepts ("en_CA" becomes "en-CA"); falls back to en-CA if it's unusable. */
+export function safeLocale(locale: string | null | undefined): string {
+  try {
+    return Intl.getCanonicalLocales((locale ?? '').replace(/_/g, '-'))[0] ?? 'en-CA';
+  } catch {
+    return 'en-CA';
+  }
+}
+
 export function formatCents(
   cents: number | null | undefined,
   currency = 'CAD',
@@ -32,14 +41,20 @@ export function formatCents(
   const key = `${currency}|${locale}|${opts.compact ? 'c' : ''}|${opts.noCents ? 'n' : ''}`;
   let fmt = formatters.get(key);
   if (!fmt) {
-    fmt = new Intl.NumberFormat(locale, {
+    const options: Intl.NumberFormatOptions = {
       style: 'currency',
       currency,
       currencyDisplay: 'narrowSymbol',
       notation: opts.compact ? 'compact' : 'standard',
       maximumFractionDigits: opts.compact ? 1 : opts.noCents ? 0 : 2,
       minimumFractionDigits: opts.compact || opts.noCents ? 0 : 2,
-    });
+    };
+    try {
+      fmt = new Intl.NumberFormat(safeLocale(locale), options);
+    } catch {
+      // Unusable currency code: show the plain amount rather than breaking the page.
+      fmt = new Intl.NumberFormat(safeLocale(locale), { ...options, style: 'decimal' });
+    }
     formatters.set(key, fmt);
   }
   return fmt.format(cents / 100);

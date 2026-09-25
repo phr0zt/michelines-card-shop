@@ -159,6 +159,7 @@ export function MoneyInput({
   disabled,
   autoFocus,
   ariaLabel,
+  onCommit,
 }: {
   value: number | null | undefined;
   onChange: (cents: number | null) => void;
@@ -168,6 +169,8 @@ export function MoneyInput({
   disabled?: boolean;
   autoFocus?: boolean;
   ariaLabel?: string;
+  /** Called when the person is done typing (the box loses focus or they press Enter). */
+  onCommit?: () => void;
 }) {
   const [text, setText] = useState(centsToInput(value));
   useEffect(() => {
@@ -197,6 +200,10 @@ export function MoneyInput({
         onBlur={() => {
           const cents = parseMoneyToCents(text);
           if (cents !== null && cents >= 0) setText(centsToInput(cents));
+          onCommit?.();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && onCommit) e.currentTarget.blur();
         }}
       />
     </div>

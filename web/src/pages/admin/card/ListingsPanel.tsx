@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { BadgeDollarSign, ExternalLink, Globe, MoreHorizontal, Plus, Star, Trash2, Undo2, XCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { LISTING_STATUS_LABELS } from '@shared/constants';
 import type { CardDetail, Listing, Platform } from '@shared/types';
@@ -233,7 +233,7 @@ export function ListingsPanel({ card, onSellHere }: { card: CardDetail; onSellHe
                         <ExternalLink className="size-4" />
                       </a>
                     )}
-                    {!sold && l.status === 'ended' && (
+                    {!sold && (l.status === 'ended' || l.status === 'sold') && (
                       <IconButton label="Re-list" size="sm" onClick={() => run(() => api.updateListing(l.id, { status: 'active' }), 'Posting re-activated')}>
                         <Undo2 className="size-4" />
                       </IconButton>
@@ -264,6 +264,8 @@ function ListingEditor({
 }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const [price, setPrice] = useState(listing.price_cents);
+  useEffect(() => setPrice(listing.price_cents), [listing.price_cents]);
   const [url, setUrl] = useState(listing.url);
   const [channel, setChannel] = useState(listing.channel);
   const [listedAt, setListedAt] = useState(listing.listed_at ?? '');
@@ -274,6 +276,7 @@ function ListingEditor({
       onSaved(await api.updateListing(listing.id, patch));
     } catch (err) {
       toast.error(errorMessage(err));
+      setPrice(listing.price_cents);
       setUrl(listing.url);
       setChannel(listing.channel);
       setListedAt(listing.listed_at ?? '');
@@ -285,10 +288,9 @@ function ListingEditor({
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-[8rem_1fr_10rem]">
         <MoneyInput
           ariaLabel={`${platform.name} price`}
-          value={listing.price_cents}
-          onChange={(v) => {
-            if (v !== listing.price_cents) void save({ price_cents: v });
-          }}
+          value={price}
+          onChange={setPrice}
+          onCommit={() => price !== listing.price_cents && save({ price_cents: price })}
         />
         <Input
           aria-label={`${platform.name} link`}

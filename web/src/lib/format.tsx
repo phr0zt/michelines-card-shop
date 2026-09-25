@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { formatCents } from '@shared/money';
+import { formatCents, safeLocale } from '@shared/money';
 
 interface FormatConfig {
   currency: string;
@@ -23,7 +23,9 @@ function parseDate(value: string): Date {
 }
 
 export function useFormat() {
-  const { currency, locale } = useContext(FormatContext);
+  const config = useContext(FormatContext);
+  const currency = config.currency;
+  const locale = safeLocale(config.locale);
   return useMemo(() => {
     const dateFmt = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric' });
     const shortDateFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' });

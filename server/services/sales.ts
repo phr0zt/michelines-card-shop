@@ -6,7 +6,7 @@ import type { Db } from '../db';
 import { badRequest, notFound } from '../lib/http';
 import { searchClause } from '../lib/search';
 import { isIsoDate, nowIso, today } from '../lib/time';
-import { getCardRow, recomputeStatus } from './cards';
+import { getCardRow, recomputeStatus, refreshSaleCosts } from './cards';
 import { CARD_SUMMARY_SQL, logActivity, platformName } from './common';
 import { endListings } from './listings';
 import { listingFromRow, platformFromRow, saleFromRow } from './serializers';
@@ -46,7 +46,6 @@ export const salePatchSchema = z
     shipping_cost_cents: cents,
     fees_cents: cents,
     other_costs_cents: cents,
-    cost_basis_cents: cents,
     buyer_name: text(200),
     buyer_contact: text(300),
     payment_method: text(60),
@@ -186,6 +185,7 @@ export function updateSale(db: Db, id: number, input: unknown): Sale {
       __now: nowIso(),
       __id: id,
     });
+    refreshSaleCosts(db, before.card_id);
     recomputeStatus(db, before.card_id);
   })();
   return getSale(db, id);
@@ -196,6 +196,12 @@ export function deleteSale(db: Db, id: number): void {
   const settings = getSettings(db);
   db.transaction(() => {
     db.prepare('DELETE FROM sales WHERE id = ?').run(id);
+    // Recording the sale marked its listing sold; put it back so the card can sell there again.
+    if (sale.platform_id && !db.prepare('SELECT 1 FROM sales WHERE card_id = ? AND platform_id = ?').get(sale.card_id, sale.platform_id)) {
+      db.prepare(
+        "UPDATE listings SET status = 'active', ended_at = NULL, updated_at = ? WHERE card_id = ? AND platform_id = ? AND status = 'sold'",
+      ).run(nowIso(), sale.card_id, sale.platform_id);
+    }
     recomputeStatus(db, sale.card_id);
     logActivity(
       db,

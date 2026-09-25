@@ -5,6 +5,7 @@ import type { AllocationPreview, Purchase, PurchaseDetail } from '../../shared/t
 import type { Db } from '../db';
 import { badRequest, notFound } from '../lib/http';
 import { isIsoDate, nowIso, today } from '../lib/time';
+import { refreshSaleCosts } from './cards';
 import { logActivity } from './common';
 import { purchaseFromRow } from './serializers';
 import { getSettings } from './settings';
@@ -175,6 +176,7 @@ export function applyAllocation(db: Db, purchaseId: number, method: CostAllocati
     const stmt = db.prepare('UPDATE cards SET cost_cents = ?, updated_at = ? WHERE id = ?');
     for (const a of preview.allocations) {
       stmt.run(a.cost_cents, nowIso(), a.card_id);
+      refreshSaleCosts(db, a.card_id);
       logActivity(
         db,
         a.card_id,

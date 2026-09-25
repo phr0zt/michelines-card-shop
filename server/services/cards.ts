@@ -342,6 +342,16 @@ function sortImages(a: CardImage, b: CardImage): number {
   return order[a.side] - order[b.side] || a.sort_order - b.sort_order || a.id - b.id;
 }
 
+/**
+ * A sale's cost is the card's cost per copy × copies sold. Call after the card's
+ * cost or a sale's quantity changes, so profit reflects costs added later.
+ */
+export function refreshSaleCosts(db: Db, cardId: number): void {
+  db.prepare(
+    'UPDATE sales SET cost_basis_cents = COALESCE((SELECT cost_cents FROM cards WHERE id = @card), 0) * quantity WHERE card_id = @card',
+  ).run({ card: cardId });
+}
+
 export function refreshSearchText(db: Db, id: number): void {
   const row = db.prepare('SELECT * FROM cards WHERE id = ?').get(id) as CardRow | undefined;
   if (!row) return;
@@ -460,6 +470,7 @@ export function updateCard(db: Db, id: number, patch: unknown): Card {
     for (const [k, v] of entries) values[k] = toDbValue(k, v);
     db.prepare(`UPDATE cards SET ${sets}, updated_at = @updated_at WHERE id = @id`).run(values);
     refreshSearchText(db, id);
+    if (parsed.cost_cents !== undefined) refreshSaleCosts(db, id);
 
     if (parsed.status !== undefined && parsed.status !== before.status) {
       const status = recomputeStatus(db, id);

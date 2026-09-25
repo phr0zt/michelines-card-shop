@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConfirmProvider } from './components/ui/Dialog';
 import { PageSpinner } from './components/ui/Feedback';
 import { ToastProvider } from './components/ui/Toast';
@@ -29,31 +30,33 @@ export function App() {
     <BrowserRouter>
       <ToastProvider>
         <ConfirmProvider>
-          <Suspense fallback={<PageSpinner />}>
-            <Routes>
-              <Route element={<ShopLayout />}>
-                <Route index element={<ShopHome />} />
-                <Route path="card/:sku" element={<ShopCardPage />} />
-              </Route>
-              <Route path="admin/login" element={<LoginPage />} />
-              <Route path="admin/print" element={<PrintPage />} />
-              <Route path="admin" element={<AdminLayout />}>
-                <Route index element={<DashboardPage />} />
-                <Route path="cards" element={<InventoryPage />} />
-                <Route path="cards/new" element={<AddCardsPage />} />
-                <Route path="cards/:id" element={<CardPage />} />
-                <Route path="review" element={<ReviewPage />} />
-                <Route path="inquiries" element={<InquiriesPage />} />
-                <Route path="sales" element={<SalesPage />} />
-                <Route path="purchases" element={<PurchasesPage />} />
-                <Route path="purchases/:id" element={<PurchasePage />} />
-                <Route path="reports" element={<ReportsPage />} />
-                <Route path="settings" element={<SettingsPage />} />
-                <Route path="*" element={<NotFound admin />} />
-              </Route>
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<PageSpinner />}>
+              <Routes>
+                <Route element={<ShopLayout />}>
+                  <Route index element={<ShopHome />} />
+                  <Route path="card/:sku" element={<ShopCardPage />} />
+                </Route>
+                <Route path="admin/login" element={<LoginPage />} />
+                <Route path="admin/print" element={<PrintPage />} />
+                <Route path="admin" element={<AdminLayout />}>
+                  <Route index element={<DashboardPage />} />
+                  <Route path="cards" element={<InventoryPage />} />
+                  <Route path="cards/new" element={<AddCardsPage />} />
+                  <Route path="cards/:id" element={<CardPage />} />
+                  <Route path="review" element={<ReviewPage />} />
+                  <Route path="inquiries" element={<InquiriesPage />} />
+                  <Route path="sales" element={<SalesPage />} />
+                  <Route path="purchases" element={<PurchasesPage />} />
+                  <Route path="purchases/:id" element={<PurchasePage />} />
+                  <Route path="reports" element={<ReportsPage />} />
+                  <Route path="settings" element={<SettingsPage />} />
+                  <Route path="*" element={<NotFound admin />} />
+                </Route>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
         </ConfirmProvider>
       </ToastProvider>
     </BrowserRouter>

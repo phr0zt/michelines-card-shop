@@ -114,11 +114,24 @@ export async function runIdentification(
   options: IdentifyOptions = {},
 ): Promise<IdentifyOutcome> {
   const content = await buildContent(db, images, cardId, options.categoryHint);
+  // Parse leniently: a cut-off or refused answer isn't valid JSON, and the
+  // stop_reason checks below explain those better than a parser error would.
+  const strict = betaZodOutputFormat(IdentificationSchema);
+  const format = {
+    ...strict,
+    parse: (text: string): Identification | null => {
+      try {
+        return strict.parse(text);
+      } catch {
+        return null;
+      }
+    },
+  };
   const response = await client.beta.messages.parse({
     model,
     max_tokens: 16000,
     thinking: { type: 'adaptive' },
-    output_config: { effort, format: betaZodOutputFormat(IdentificationSchema) },
+    output_config: { effort, format },
     system: SYSTEM,
     messages: [{ role: 'user', content }],
     ...fallbackParams(model),
@@ -218,13 +231,14 @@ const TEXT_FIELDS = [
 const FLAG_FIELDS = ['is_rookie', 'is_autograph', 'is_memorabilia', 'is_graded'] as const;
 
 /**
- * Write the AI's identification onto the card. New drafts take everything;
- * for reviewed cards only blank fields are filled unless `overwrite` is set,
- * so nothing a person typed gets clobbered.
+ * Write the AI's identification onto the card. `overwrite: true` replaces every
+ * field and `false` only fills blanks, so nothing a person typed gets clobbered.
+ * Left unset (the automatic run after upload), a new draft that has never been
+ * identified takes everything and any other card only gets its blanks filled.
  */
-export function applyIdentification(db: Db, cardId: number, result: Identification, overwrite: boolean): void {
+export function applyIdentification(db: Db, cardId: number, result: Identification, overwrite?: boolean): void {
   const card = getCardRow(db, cardId);
-  const takeAll = overwrite || card.status === 'draft';
+  const takeAll = overwrite ?? (card.status === 'draft' && !card.ai_identified_at);
   const updates: Record<string, unknown> = {};
 
   for (const field of TEXT_FIELDS) {

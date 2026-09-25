@@ -182,11 +182,37 @@ describe('listings, sales and status', () => {
     await agent.post(`/api/cards/${card.id}/sales`).send({ sale_price_cents: 100 }).expect(400);
     await agent.delete(`/api/cards/${card.id}`).expect(409);
 
-    // deleting the sale puts the card back
+    // deleting the sale puts the card back, still posted where it "sold"
     await agent.delete(`/api/sales/${sold.sale.id}`).expect(204);
     const back = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
-    expect(back.status).toBe('in_stock');
+    expect(back.status).toBe('listed');
     expect(back.quantity_sold).toBe(0);
+    expect(back.listings.find((l: { platform_id: number }) => l.platform_id === kijiji).status).toBe('active');
+  });
+
+  it('keeps sale costs in step with the card cost and quantity', async () => {
+    const { agent } = await setup();
+    const card = await createCard(agent, { quantity: 3, status: 'in_stock' }, false);
+    const sale = (await agent.post(`/api/cards/${card.id}/sales`).send({ sale_price_cents: 3000 }).expect(201)).body.sale;
+    expect(sale.cost_basis_cents).toBe(0);
+    await agent.patch(`/api/cards/${card.id}`).send({ cost_cents: 500 }).expect(200);
+    const costOf = async () => (await agent.get('/api/sales').expect(200)).body.sales[0].cost_basis_cents;
+    expect(await costOf()).toBe(500);
+    await agent.patch(`/api/sales/${sale.id}`).send({ quantity: 2 }).expect(200);
+    expect(await costOf()).toBe(1000);
+
+    const purchase = (await agent.post('/api/purchases').send({ total_cost_cents: 900 }).expect(201)).body;
+    await agent.post(`/api/purchases/${purchase.id}/cards`).send({ card_ids: [card.id] }).expect(200);
+    await agent.post(`/api/purchases/${purchase.id}/allocate`).send({ method: 'even', apply: true }).expect(200);
+    expect(await costOf()).toBe(600);
+  });
+
+  it('refuses to delete a platform that has sales on record', async () => {
+    const { agent } = await setup();
+    const card = await createCard(agent, { status: 'in_stock' }, false);
+    const platform = (await agent.post('/api/platforms').send({ name: 'Flea Market', kind: 'in_person' }).expect(201)).body;
+    await agent.post(`/api/cards/${card.id}/sales`).send({ platform_id: platform.id, sale_price_cents: 500 }).expect(201);
+    await agent.delete(`/api/platforms/${platform.id}`).expect(409);
   });
 
   it('estimates eBay fees and handles quantities', async () => {
@@ -305,6 +331,18 @@ describe('storefront', () => {
   });
 });
 
+describe('settings', () => {
+  it('fixes up or rejects number formats and time zones', async () => {
+    const { agent } = await setup();
+    expect((await agent.patch('/api/settings').send({ locale: 'en_CA' }).expect(200)).body.locale).toBe('en-CA');
+    await agent.patch('/api/settings').send({ locale: 'fr CA' }).expect(400);
+    await agent.patch('/api/settings').send({ time_zone: 'Mars/Olympus' }).expect(400);
+    expect((await agent.patch('/api/settings').send({ time_zone: 'America/Vancouver' }).expect(200)).body.time_zone).toBe(
+      'America/Vancouver',
+    );
+  });
+});
+
 describe('purchases', () => {
   it('allocates a lot cost across its cards', async () => {
     const { agent } = await setup();
@@ -354,6 +392,16 @@ describe('analytics and exports', () => {
     expect(ebayStats.sales).toBe(1);
     const other = report.by_platform.find((p: { platform_id: number | null }) => p.platform_id === null);
     expect(other.sales).toBe(1);
+
+    // "All time" starts at the first sale or purchase, not in 2000.
+    await agent.post('/api/purchases').send({ total_cost_cents: 5000, purchased_on: '2023-02-14' }).expect(201);
+    const all = (await agent.get('/api/reports/pnl?from=2000-01-01&to=2025-06-30&group=month').expect(200)).body;
+    expect(all.rows[0].period).toBe('2023-02');
+    expect(all.rows).toHaveLength(29);
+    expect(all.totals.gross_cents).toBe(12500);
+    expect(all.totals.purchases_cents).toBe(5000);
+    const weekly = (await agent.get('/api/reports/pnl?from=2000-01-01&to=2025-06-30&group=week').expect(200)).body;
+    expect(weekly.rows[0].period).toBe('2023-02-13');
 
     const dash = (await agent.get('/api/dashboard?from=2025-01-01&to=2025-06-30').expect(200)).body;
     expect(dash.overview.sales.count).toBe(2);
@@ -456,7 +504,8 @@ describe('AI jobs', () => {
                     advice: 'Consider grading.',
                     comps: [
                       { title: 'McDavid YG raw', price: 230, currency: 'USD', date: '2025-08-01', venue: 'eBay', url: 'https://www.ebay.com/itm/1', grade: 'Raw', sold: true },
-                      { title: 'bad url', price: 1, currency: 'usd', date: '', venue: 'x', url: 'javascript:alert(1)', grade: '', sold: false },
+                      { title: 'bad url', price: 1, currency: 'US$', date: '', venue: 'x', url: 'javascript:alert(1)', grade: '', sold: false },
+                      { title: 'odd currency', price: 2, currency: 'dollars', date: '', venue: 'x', url: '', grade: '', sold: false },
                     ],
                   },
                 },
@@ -490,8 +539,9 @@ describe('AI jobs', () => {
     expect(card.market_value_cents).toBe(32000);
     expect(card.asking_price_cents).toBe(34999);
     expect(card.floor_price_cents).toBe(27500);
-    expect(card.price_checks[0].comps).toHaveLength(2);
+    expect(card.price_checks[0].comps).toHaveLength(3);
     expect(card.price_checks[0].comps[1].url).toBe('');
+    expect(card.price_checks[0].comps.map((c: { currency: string }) => c.currency)).toEqual(['USD', 'USD', 'CAD']);
     expect(card.price_checks[0].sources[0].url).toBe('https://www.ebay.com/itm/1');
     expect(card.jobs.every((j: { status: string }) => j.status === 'done')).toBe(true);
     const status = (await agent.get('/api/ai/status').expect(200)).body;
@@ -505,6 +555,17 @@ describe('AI jobs', () => {
     const { agent, app } = await setup(client);
     const card = await createCard(agent, { status: 'in_stock', player: 'Typed By Hand' });
     await agent.post(`/api/cards/${card.id}/identify`).send({ then_price: false }).expect(202);
+    await app.ctx.jobs.whenIdle();
+    const after = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
+    expect(after.player).toBe('Typed By Hand');
+    expect(after.subset).toBe('Young Guns');
+  });
+
+  it('fills only blank fields on a draft when asked to', async () => {
+    const { client } = fakeClient();
+    const { agent, app } = await setup(client);
+    const card = await createCard(agent, { status: 'draft', player: 'Typed By Hand' });
+    await agent.post(`/api/cards/${card.id}/identify`).send({ overwrite: false, then_price: false }).expect(202);
     await app.ctx.jobs.whenIdle();
     const after = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
     expect(after.player).toBe('Typed By Hand');
@@ -531,6 +592,31 @@ describe('AI jobs', () => {
     const after = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
     expect(after.jobs[0].status).toBe('error');
     expect(after.jobs[0].error).toBe('boom');
+  });
+
+  it('retries only the latest failure for each card', async () => {
+    let calls = 0;
+    const client = {
+      beta: {
+        messages: {
+          parse: async () => {
+            calls++;
+            throw new Error('boom');
+          },
+        },
+      },
+    } as unknown as AiClient;
+    const { agent, app } = await setup(client);
+    const card = await createCard(agent);
+    for (let i = 0; i < 3; i++) {
+      await agent.post(`/api/cards/${card.id}/identify`).send({ overwrite: true }).expect(202);
+      await app.ctx.jobs.whenIdle();
+    }
+    expect(calls).toBe(3);
+    expect((await agent.get('/api/ai/status').expect(200)).body.failed_recent).toBe(1);
+    expect((await agent.post('/api/ai/retry-failed').expect(200)).body.retried).toBe(1);
+    await app.ctx.jobs.whenIdle();
+    expect(calls).toBe(4);
   });
 
   it('explains when AI is not configured', async () => {

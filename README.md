@@ -61,7 +61,7 @@ The repo includes a `Dockerfile`, so any host that runs Docker works. On [Railwa
 4. **Settings → Networking → Generate domain** (or add your own domain).
 5. Optional: set the health check path to `/api/health`.
 
-Then open `https://your-domain/admin`, sign in, and go to **Settings** to set your shop name, contact info, pickup area and platform fees.
+Then open `https://your-domain/admin`, sign in, and go to **Settings** to set your shop name, contact info, pickup area, time zone and platform fees.
 
 Other hosts: build the image (`docker build -t card-shop .`), run it with a persistent volume on `/data` and the two variables above, and put it behind HTTPS.
 
@@ -75,6 +75,7 @@ Other hosts: build the image (`docker build -t card-shop .`), run it with a pers
 | `PORT` | no | HTTP port (default 3001). |
 | `SESSION_SECRET` | no | Signs login cookies. Generated and saved in `DATA_DIR` if not set. |
 | `ANTHROPIC_MODEL` | no | Overrides the model chosen in Settings. |
+| `TRUST_PROXY` | no | How many reverse proxies sit in front of the app, so sign-in limits see each visitor's real address. Automatic on Railway (1). Set it if you add something like Cloudflare in front (e.g. `2`); leave it unset when nothing is in front. |
 
 ## About the AI
 

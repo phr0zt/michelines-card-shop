@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AI_EFFORTS } from '../../shared/constants';
 import type { Settings } from '../../shared/types';
 import type { Db } from '../db';
+import { isTimeZone, setTimeZone } from '../lib/time';
 
 export const DEFAULT_SETTINGS: Settings = {
   store_name: "Micheline's Card Shop",
@@ -26,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ai_max_searches: 5,
   stale_listing_days: 30,
   high_value_cents: 5000,
+  time_zone: 'America/Toronto',
 };
 
 const text = (max: number) => z.string().trim().max(max);
@@ -43,7 +45,19 @@ export const settingsPatchSchema = z
       .trim()
       .toUpperCase()
       .regex(/^[A-Z]{3}$/, 'Use a 3-letter currency code like CAD or USD'),
-    locale: text(20).min(2),
+    locale: text(20)
+      .min(2)
+      .transform((value, ctx) => {
+        // Must be a tag the browser can format with, or every page that shows money breaks.
+        try {
+          const [locale] = Intl.getCanonicalLocales(value.replace(/_/g, '-'));
+          new Intl.NumberFormat(locale);
+          return locale;
+        } catch {
+          ctx.addIssue({ code: 'custom', message: 'Use a language code like en-CA or fr-CA' });
+          return z.NEVER;
+        }
+      }),
     usd_exchange_rate: z.number().positive().max(1000),
     sku_prefix: z
       .string()
@@ -61,6 +75,7 @@ export const settingsPatchSchema = z
     ai_max_searches: z.number().int().min(1).max(15),
     stale_listing_days: z.number().int().min(1).max(365),
     high_value_cents: z.number().int().min(0),
+    time_zone: text(64).refine(isTimeZone, 'Pick a time zone from the list, e.g. America/Toronto'),
   })
   .partial()
   .strict();
@@ -92,5 +107,7 @@ export function updateSettings(db: Db, patch: unknown): Settings {
       upsert.run(key, JSON.stringify(value));
     }
   })();
-  return getSettings(db);
+  const settings = getSettings(db);
+  if (parsed.time_zone) setTimeZone(settings.time_zone);
+  return settings;
 }

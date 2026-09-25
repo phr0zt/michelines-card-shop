@@ -165,6 +165,14 @@ function collectSources(content: ContentBlock[], into: Map<string, PriceSource>)
 const toCents = (n: number | null): number | null =>
   n === null || !Number.isFinite(n) || n < 0 ? null : Math.round(n * 100);
 
+/** An ISO currency code for a comp; the AI sometimes writes "US$" or "C$". */
+function currencyCode(value: string, fallback: string): string {
+  const aliases: Record<string, string> = { 'US$': 'USD', 'C$': 'CAD', 'CA$': 'CAD', CDN: 'CAD', 'CDN$': 'CAD', '£': 'GBP', '€': 'EUR' };
+  const v = value.trim().toUpperCase();
+  const code = aliases[v] ?? v;
+  return /^[A-Z]{3}$/.test(code) ? code : fallback;
+}
+
 function safeUrl(u: string): string {
   try {
     const url = new URL(u);
@@ -247,7 +255,7 @@ function toPriceResult(
   const comps: PriceComp[] = r.comps.slice(0, 12).map((c) => ({
     title: c.title.slice(0, 300),
     price: Number.isFinite(c.price) ? c.price : 0,
-    currency: (c.currency || settings.currency).slice(0, 8).toUpperCase(),
+    currency: currencyCode(c.currency, settings.currency),
     date: c.date.slice(0, 20),
     venue: c.venue.slice(0, 80),
     url: safeUrl(c.url),

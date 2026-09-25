@@ -42,9 +42,15 @@ export function SellDialog({
   const [platformId, setPlatformId] = useState<number | null>(initialPlatform);
   const [soldOn, setSoldOn] = useState(todayIso());
   const [quantity, setQuantity] = useState(1);
-  const [price, setPrice] = useState<number | null>(
-    prefill?.price_cents ?? prefill?.inquiry?.offer_cents ?? listingPrice ?? card.asking_price_cents ?? null,
-  );
+  // Listing, offer and asking prices are per copy; the sale price is the total.
+  const unitPrice = prefill?.price_cents ?? prefill?.inquiry?.offer_cents ?? listingPrice ?? card.asking_price_cents ?? null;
+  const [price, setPrice] = useState<number | null>(unitPrice);
+  const [priceTouched, setPriceTouched] = useState(false);
+
+  function changeQuantity(value: number) {
+    setQuantity(value);
+    if (!priceTouched && unitPrice !== null) setPrice(unitPrice * value);
+  }
   const [shippingCharged, setShippingCharged] = useState<number | null>(0);
   const [shippingCost, setShippingCost] = useState<number | null>(0);
   const [fees, setFees] = useState<number | null>(null);
@@ -183,10 +189,19 @@ export function SellDialog({
               min={1}
               max={remaining}
               value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, Math.min(remaining, Number(e.target.value) || 1)))}
+              onChange={(e) => changeQuantity(Math.max(1, Math.min(remaining, Number(e.target.value) || 1)))}
             />
           )}
-          <MoneyField label="Sale price" value={price} onChange={setPrice} autoFocus />
+          <MoneyField
+            label="Sale price"
+            hint={quantity > 1 ? `Total for all ${quantity} copies` : undefined}
+            value={price}
+            onChange={(v) => {
+              setPrice(v);
+              setPriceTouched(true);
+            }}
+            autoFocus
+          />
           <MoneyField label="Shipping charged" hint="What the buyer paid for shipping" value={shippingCharged} onChange={setShippingCharged} />
           <MoneyField label="Postage you paid" value={shippingCost} onChange={setShippingCost} />
           <MoneyField

@@ -15,6 +15,7 @@ import type {
 } from '../../shared/types';
 import type { Db } from '../db';
 import { addDays, daysBetween, today } from '../lib/time';
+import { OPEN_FAILED_JOBS } from './ai/jobs';
 import { CARD_SUMMARY_SQL, summaryFromPrefixed } from './common';
 import { activityFromRow, inquiryFromRow, saleFromRow } from './serializers';
 import { getSettings } from './settings';
@@ -99,6 +100,23 @@ export function bucketKey(date: string, group: Group): string {
   return today(dt);
 }
 
+/**
+ * Where a report's periods should start. Ranges up to a year are shown whole;
+ * longer ones (like "All time") start at the first sale or purchase instead of
+ * listing years of empty periods.
+ */
+export function periodsStart(db: Db, from: string, to: string): string {
+  const yearBack = addDays(to, -365);
+  if (from >= yearBack) return from;
+  const first = (
+    db.prepare('SELECT MIN(d) AS d FROM (SELECT MIN(sold_on) AS d FROM sales UNION ALL SELECT MIN(purchased_on) FROM purchases)').get() as {
+      d: string | null;
+    }
+  ).d;
+  const start = first && first < yearBack ? first : yearBack;
+  return start > from ? start : from;
+}
+
 export function bucketsBetween(from: string, to: string, group: Group): string[] {
   const keys: string[] = [];
   if (group === 'month') {
@@ -111,13 +129,13 @@ export function bucketsBetween(from: string, to: string, group: Group): string[]
         m = 1;
         y++;
       }
-      if (keys.length > 400) break;
+      if (keys.length > 1200) break;
     }
     return keys;
   }
   let cursor = bucketKey(from, group);
   const step = group === 'week' ? 7 : 1;
-  while (cursor <= to && keys.length < 800) {
+  while (cursor <= to && keys.length < 4000) {
     keys.push(cursor);
     cursor = addDays(cursor, step);
   }
@@ -206,7 +224,7 @@ export function overview(db: Db, from: string, to: string): Overview {
 
 export function timeseries(db: Db, from: string, to: string, group: Group): TimePoint[] {
   const points = new Map<string, TimePoint>();
-  for (const key of bucketsBetween(from, to, group)) {
+  for (const key of bucketsBetween(periodsStart(db, from, to), to, group)) {
     points.set(key, { period: key, sales: 0, units: 0, gross_cents: 0, fees_cents: 0, net_cents: 0, cards_added: 0, purchases_cents: 0 });
   }
   const get = (date: string) => points.get(bucketKey(date, group));
@@ -491,8 +509,7 @@ export function attention(db: Db): Attention {
     failed_jobs: (
       db
         .prepare(
-          `SELECT COUNT(*) AS n FROM ai_jobs j WHERE j.status = 'error' AND NOT EXISTS (
-             SELECT 1 FROM ai_jobs k WHERE k.card_id = j.card_id AND k.kind = j.kind AND k.id > j.id)`,
+          `SELECT COUNT(*) AS n FROM (${OPEN_FAILED_JOBS})`,
         )
         .get() as { n: number }
     ).n,
@@ -529,7 +546,7 @@ export function dashboard(db: Db, from: string, to: string, group: Group): Dashb
 
 export function pnl(db: Db, from: string, to: string, group: Group): PnlReport {
   const rows = new Map<string, PnlRow>();
-  for (const key of bucketsBetween(from, to, group)) rows.set(key, emptyPnl(key));
+  for (const key of bucketsBetween(periodsStart(db, from, to), to, group)) rows.set(key, emptyPnl(key));
   const totals = emptyPnl('total');
   for (const s of salesInRange(db, from, to)) {
     const row = rows.get(bucketKey(s.sold_on, group));

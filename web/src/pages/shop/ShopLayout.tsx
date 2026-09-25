@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Mail, MapPin, Phone, Store } from 'lucide-react';
 import { useEffect } from 'react';
-import { Link, NavLink, Outlet, useOutletContext, useSearchParams } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useOutletContext, useSearchParams } from 'react-router';
 import type { PublicStore } from '@shared/types';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { Alert, PageSpinner } from '../../components/ui/Feedback';
 import { api, errorMessage } from '../../lib/api';
 import { FormatProvider } from '../../lib/format';
@@ -15,6 +16,7 @@ export function useStore(): PublicStore {
 export function ShopLayout() {
   const store = useQuery({ queryKey: ['public-store'], queryFn: api.public.store, staleTime: 60_000 });
   const [params] = useSearchParams();
+  const location = useLocation();
   const activeCategory = params.get('category') ?? '';
 
   useEffect(() => {
@@ -103,7 +105,9 @@ export function ShopLayout() {
           )}
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-          <Outlet context={s} />
+          <ErrorBoundary resetKey={location.pathname}>
+            <Outlet context={s} />
+          </ErrorBoundary>
         </main>
         <footer className="border-t border-line bg-surface">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-muted">

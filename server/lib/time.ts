@@ -2,7 +2,24 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Local calendar date (server time zone) as YYYY-MM-DD. */
+export function isTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Counts local dates ("today", week starts, month starts) in the shop's time
+ * zone rather than the server's, which is UTC on most hosts.
+ */
+export function setTimeZone(tz: string): void {
+  if (isTimeZone(tz)) process.env.TZ = tz;
+}
+
+/** Local calendar date (the shop's time zone, see setTimeZone) as YYYY-MM-DD. */
 export function today(date = new Date()): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');

@@ -15,8 +15,10 @@ Trading-card inventory + cross-listing tracker + public shop. See README.md for 
 - Money is always integer cents (`*_cents`); convert only at the edges (`shared/money.ts`).
 - Dates people pick are `YYYY-MM-DD` strings; timestamps are ISO strings (`server/lib/time.ts`).
 - Card status is partly derived: `recomputeStatus` (server/services/cards.ts) sets sold / listed / in_stock from sales and active listings, but keeps the manual statuses `draft`, `pending`, `keeper`. Call it after anything that changes listings, sales or quantity.
-- Every change to searchable card fields must call `refreshSearchText` (the `search_text` column powers search).
-- Migrations in `server/db/migrations.ts` are append-only — add a new version, never edit a shipped one.
+- Every change to searchable card fields must call `refreshSearchText`. It fills `search_text` (admin search, includes private fields) and `public_search_text` (shop search, only fields the shop shows).
+- A sale's `cost_basis_cents` is the card's cost × quantity sold; call `refreshSaleCosts` after changing a card's cost or a sale's quantity.
+- "Today" and other local dates are in the shop's time zone (Settings → `time_zone`, applied via `setTimeZone` in `server/lib/time.ts`).
+- Migrations in `server/db/migrations.ts` are append-only — add a new version, never edit a shipped one. A migration can run an `after(db)` backfill.
 - Request bodies are validated with zod schemas that also whitelist the columns used in dynamic `UPDATE … SET` statements.
 - The public API (`server/services/public.ts`) uses an explicit allow-list — never expose cost, floor price, notes, location or buyer data there.
 - Links entered by people go through `cleanUrl` (http/https only) before they're stored.

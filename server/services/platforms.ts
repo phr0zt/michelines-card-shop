@@ -99,7 +99,15 @@ export function updatePlatform(db: Db, id: number, input: unknown): Platform {
 
 export function deletePlatform(db: Db, id: number): void {
   getPlatform(db, id);
-  const used = (db.prepare('SELECT COUNT(*) AS n FROM listings WHERE platform_id = ?').get(id) as { n: number }).n;
-  if (used > 0) throw conflict('This platform has listings on record. Turn it off instead so history is kept.');
+  const used = db
+    .prepare(
+      `SELECT EXISTS (SELECT 1 FROM listings WHERE platform_id = @id)
+           OR EXISTS (SELECT 1 FROM sales WHERE platform_id = @id)
+           OR EXISTS (SELECT 1 FROM inquiries WHERE platform_id = @id) AS used`,
+    )
+    .get({ id }) as { used: number };
+  if (used.used) {
+    throw conflict('This platform has listings, sales or inquiries on record. Turn it off instead so history is kept.');
+  }
   db.prepare('DELETE FROM platforms WHERE id = ?').run(id);
 }

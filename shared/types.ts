@@ -314,6 +314,8 @@ export interface Settings {
   ai_max_searches: number;
   stale_listing_days: number;
   high_value_cents: number;
+  /** IANA time zone the shop's dates ("today", follow-ups, reports) are counted in. */
+  time_zone: string;
 }
 
 export interface AiStatus {
