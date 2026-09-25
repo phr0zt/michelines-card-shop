@@ -1,0 +1,45 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { createApp } from './app';
+import { recordValueSnapshot } from './services/analytics';
+
+if (fs.existsSync('.env')) process.loadEnvFile('.env');
+
+const port = Number(process.env.PORT ?? 3001);
+const dataDir = path.resolve(process.env.DATA_DIR ?? './data');
+const adminPassword = process.env.ADMIN_PASSWORD ?? '';
+const webDir = path.join(import.meta.dirname, 'web');
+
+const { app, ctx, close } = createApp({
+  dataDir,
+  adminPassword,
+  sessionSecret: process.env.SESSION_SECRET,
+  webDir,
+});
+
+if (!adminPassword) {
+  console.warn('⚠ ADMIN_PASSWORD is not set — nobody can log in to /admin until you set it.');
+}
+if (!ctx.jobs.configured) {
+  console.warn('ℹ ANTHROPIC_API_KEY is not set — AI card identification and price research are turned off.');
+}
+
+ctx.jobs.start();
+recordValueSnapshot(ctx.db);
+const snapshotTimer = setInterval(() => recordValueSnapshot(ctx.db), 6 * 60 * 60 * 1000);
+snapshotTimer.unref();
+
+const server = app.listen(port, () => {
+  console.log(`Card shop running on http://localhost:${port}  (data: ${dataDir})`);
+});
+
+function shutdown(signal: string): void {
+  console.log(`${signal} received, shutting down…`);
+  server.close(() => {
+    close();
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 10_000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
