@@ -19,8 +19,9 @@ COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 # Runs as root because hosted volumes (e.g. Railway) are mounted root-owned.
+# No VOLUME instruction: Railway rejects it; attach a volume at /data instead
+# (or `docker run -v card-data:/data …`).
 RUN mkdir -p /data
-VOLUME ["/data"]
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD node -e "fetch('http://localhost:' + (process.env.PORT || 3001) + '/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
