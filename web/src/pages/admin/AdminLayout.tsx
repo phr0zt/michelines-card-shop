@@ -21,8 +21,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import { ButtonLink } from '../../components/ui/Button';
-import { PageSpinner } from '../../components/ui/Feedback';
+import { Alert, PageSpinner } from '../../components/ui/Feedback';
 import { api } from '../../lib/api';
 import { FormatProvider } from '../../lib/format';
 import { useNavCounts, useSettings } from '../../lib/queries';
@@ -86,6 +87,7 @@ export default function AdminLayout() {
 function AdminShell() {
   const settings = useSettings();
   const counts = useNavCounts().data;
+  const system = useQuery({ queryKey: ['system'], queryFn: api.system, staleTime: Infinity }).data;
   const [drawer, setDrawer] = useState(false);
   const [dark, setDark] = useState(isDarkNow());
   const navigate = useNavigate();
@@ -240,6 +242,11 @@ function AdminShell() {
         </header>
 
         <main className="mx-auto w-full max-w-7xl px-3 py-5 sm:px-6 sm:py-6">
+          {system?.storage_warning && (
+            <Alert tone="critical" className="mb-5" title="Your data isn’t being saved permanently">
+              {system.storage_warning}
+            </Alert>
+          )}
           <Outlet />
         </main>
       </div>

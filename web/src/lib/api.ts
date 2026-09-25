@@ -156,6 +156,7 @@ export const api = {
   settings: () => get<Settings>('/api/settings'),
   updateSettings: (body: Partial<Settings>) => patch<Settings>('/api/settings', body),
   navCounts: () => get<NavCounts>('/api/nav-counts'),
+  system: () => get<{ storage_warning: string | null }>('/api/system'),
   aiStatus: () => get<AiStatus>('/api/ai/status'),
   aiJobs: () => get<AiJobWithCard[]>('/api/ai/jobs'),
   retryFailed: () => post<{ retried: number }>('/api/ai/retry-failed'),

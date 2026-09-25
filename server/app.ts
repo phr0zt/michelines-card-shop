@@ -25,6 +25,8 @@ export interface AppOptions {
   /** Override the Anthropic client (tests pass a fake; null disables AI). */
   aiClient?: AiClient | null;
   aiConcurrency?: number;
+  /** Shown to the owner in the admin when data isn't on persistent storage. */
+  storageWarning?: string | null;
 }
 
 /** A random secret persisted next to the database, so logins survive restarts. */
@@ -87,6 +89,10 @@ export function createApp(opts: AppOptions) {
   });
   app.post('/api/auth/login', auth.login);
   app.post('/api/auth/logout', auth.logout);
+
+  app.get('/api/system', auth.requireAuth, (_req, res) => {
+    res.json({ storage_warning: opts.storageWarning ?? null });
+  });
 
   app.use('/api', publicRoutes(ctx));
   app.use(
