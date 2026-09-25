@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildListingTitle, cardLabel, listingTexts, researchLinks, researchQuery } from '../shared/cardText';
 import { allocateCents, estimateFeesCents, parseMoneyToCents, saleNetCents } from '../shared/money';
-import { buildSearchText, tokenizeQuery } from '../server/lib/search';
+import { buildPublicSearchText, buildSearchText, tokenizeQuery } from '../server/lib/search';
+import { openDb } from '../server/db';
+import { migrate } from '../server/db/migrations';
 import { toCsv } from '../server/services/exports';
 import { bucketKey, bucketsBetween } from '../server/services/analytics';
 import { normalizeCategory, normalizeCondition, normalizeConfidence } from '../server/services/ai/identify';
@@ -112,6 +114,26 @@ describe('search', () => {
     for (const term of tokenizeQuery('gretzky opc 79 rc psa8 "binder 3"')) {
       expect(text.includes(term)).toBe(true);
     }
+    const shopText = buildPublicSearchText({ ...card, sku: 'MC-00001' });
+    expect(shopText).toContain('gretzky');
+    expect(shopText).not.toContain('binder');
+  });
+});
+
+describe('migrations', () => {
+  it('backfills the public search column without private fields', () => {
+    const db = openDb(':memory:');
+    db.prepare(
+      `INSERT INTO cards (sku, status, created_at, updated_at, player, notes, location_binder)
+       VALUES ('MC-00001', 'in_stock', '2026-01-01', '2026-01-01', 'Wayne Gretzky', 'from Tremblay', 'Blue')`,
+    ).run();
+    db.exec(`ALTER TABLE cards DROP COLUMN public_search_text; DELETE FROM schema_migrations WHERE version = 2;`);
+    migrate(db);
+    const row = db.prepare('SELECT public_search_text AS text FROM cards').get() as { text: string };
+    expect(row.text).toContain('gretzky');
+    expect(row.text).not.toContain('tremblay');
+    expect(row.text).not.toContain('blue');
+    db.close();
   });
 });
 

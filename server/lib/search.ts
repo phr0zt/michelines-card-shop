@@ -28,7 +28,8 @@ const ALIASES: [RegExp, string][] = [
   [/refractor/, 'ref'],
 ];
 
-export interface SearchableCard {
+/** Card fields the public shop shows — the only ones its search may match. */
+export interface PublicSearchableCard {
   sku: string;
   category: string;
   player: string;
@@ -46,20 +47,23 @@ export interface SearchableCard {
   is_graded: boolean | number;
   grading_company: string;
   grade: string;
-  cert_number: string;
   condition: string;
+  title: string;
+}
+
+export interface SearchableCard extends PublicSearchableCard {
+  cert_number: string;
   location_binder: string;
   location_page: string;
   location_slot: string;
-  title: string;
   tags: string;
   notes: string;
   acquired_from: string;
 }
 
-export function buildSearchText(c: SearchableCard): string {
+function publicParts(c: PublicSearchableCard): string[] {
   const num = (c.card_number ?? '').replace(/^#/, '').trim();
-  const parts: string[] = [
+  const parts = [
     c.sku,
     c.category,
     c.player,
@@ -77,24 +81,40 @@ export function buildSearchText(c: SearchableCard): string {
     c.is_autograph ? 'autograph auto signed' : '',
     c.is_memorabilia ? 'memorabilia relic patch jersey' : '',
     c.is_graded ? `graded slab ${c.grading_company} ${c.grade} ${c.grading_company}${c.grade}` : 'raw ungraded',
-    c.cert_number,
     c.condition,
-    c.location_binder ? `binder ${c.location_binder}` : '',
-    c.location_page ? `page ${c.location_page}` : '',
-    c.location_slot ? `slot ${c.location_slot}` : '',
     c.title,
-    c.tags,
-    c.notes,
-    c.acquired_from,
   ];
   // Two-digit year shorthand: "1979-80" also matches "79", "1990" matches "90".
   const yearMatch = /^(\d{4})/.exec((c.year ?? '').trim());
   if (yearMatch) parts.push(yearMatch[1].slice(2));
+  return parts;
+}
+
+function toSearchText(parts: string[]): string {
   let text = normalize(parts.filter(Boolean).join(' '));
   for (const [re, alias] of ALIASES) {
     if (re.test(text)) text += ` ${alias}`;
   }
   return ` ${text} `;
+}
+
+/** Everything the admin can search by, including private notes, location and where it came from. */
+export function buildSearchText(c: SearchableCard): string {
+  return toSearchText([
+    ...publicParts(c),
+    c.cert_number,
+    c.location_binder ? `binder ${c.location_binder}` : '',
+    c.location_page ? `page ${c.location_page}` : '',
+    c.location_slot ? `slot ${c.location_slot}` : '',
+    c.tags,
+    c.notes,
+    c.acquired_from,
+  ]);
+}
+
+/** Only what the public shop shows, so shop searches can't probe private fields. */
+export function buildPublicSearchText(c: PublicSearchableCard): string {
+  return toSearchText(publicParts(c));
 }
 
 /** Split a query into lower-cased terms; "quoted phrases" stay together. */

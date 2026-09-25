@@ -13,8 +13,18 @@ import { api, errorMessage } from '../../../lib/api';
 import { useFormat } from '../../../lib/format';
 import { useAiStatus, useApplyCard, usePurchases } from '../../../lib/queries';
 import { useSyncedForm } from '../../../lib/useSyncedForm';
+import { useReportUnsaved } from './unsaved';
 
 const CONFIDENCE_TONE = { low: 'serious', medium: 'warning', high: 'good' } as const;
+
+/** A comp's price in its own currency; tolerates odd currency codes from older AI results. */
+function compPrice(price: number, currency: string, locale: string, fallback: string): string {
+  try {
+    return price.toLocaleString(locale, { style: 'currency', currency: currency || fallback, currencyDisplay: 'code' });
+  } catch {
+    return `${price.toLocaleString(locale)} ${currency}`.trim();
+  }
+}
 
 export function ValuePanel({ card, researching }: { card: CardDetail; researching: boolean }) {
   const fmt = useFormat();
@@ -177,7 +187,7 @@ export function ValuePanel({ card, researching }: { card: CardDetail; researchin
                         )}
                       </td>
                       <td className="tabular py-2 pr-3 text-right whitespace-nowrap">
-                        {c.price.toLocaleString(fmt.locale, { style: 'currency', currency: c.currency || fmt.currency, currencyDisplay: 'code' })}
+                        {compPrice(c.price, c.currency, fmt.locale, fmt.currency)}
                       </td>
                       <td className="py-2 pr-3 whitespace-nowrap text-ink-2">{c.grade || '—'}</td>
                       <td className="py-2 pr-3 whitespace-nowrap text-ink-2">
@@ -285,13 +295,18 @@ function PricingForm({ card }: { card: CardDetail }) {
     [card],
   );
   const form = useSyncedForm(server);
-  const { values, set, dirty } = form;
+  const { values, set, dirty, serverChanged } = form;
   const [busy, setBusy] = useState(false);
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     try {
-      const detail = await api.updateCard(card.id, { ...values, acquired_date: values.acquired_date || null });
+      // Only send what was edited, so prices the AI filled in meanwhile aren't overwritten.
+      const { acquired_date, ...changes } = form.changes();
+      const detail = await api.updateCard(card.id, {
+        ...changes,
+        ...(acquired_date !== undefined && { acquired_date: acquired_date || null }),
+      });
       applyCard(detail);
       form.markSaved({
         asking_price_cents: detail.asking_price_cents,
@@ -302,12 +317,15 @@ function PricingForm({ card }: { card: CardDetail }) {
         purchase_id: detail.purchase_id,
       });
       toast.success('Prices saved');
+      return true;
     } catch (err) {
       toast.error(errorMessage(err));
+      return false;
     } finally {
       setBusy(false);
     }
   }
+  useReportUnsaved('prices', 'your prices', dirty, save);
 
   const margin =
     values.asking_price_cents !== null && values.cost_cents !== null ? values.asking_price_cents - values.cost_cents : null;
@@ -327,6 +345,20 @@ function PricingForm({ card }: { card: CardDetail }) {
           </div>
         )}
       </div>
+      {dirty && serverChanged && (
+        <Alert
+          tone="warning"
+          className="mb-4"
+          title="These prices were updated while you were editing"
+          action={
+            <Button size="sm" onClick={form.loadServer}>
+              Load latest
+            </Button>
+          }
+        >
+          Saving will keep your edits for the fields you changed.
+        </Alert>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <MoneyField
           label="Asking price"

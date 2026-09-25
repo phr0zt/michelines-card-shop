@@ -16,6 +16,16 @@ const storageWarning =
     ? 'No Railway volume is attached, so cards and photos will be erased on the next deploy. Add a volume to this service (mount path /data) in Railway.'
     : null;
 const adminPassword = process.env.ADMIN_PASSWORD ?? '';
+// Visitor IPs (for rate limits) come from X-Forwarded-For only when a proxy we trust adds it.
+// Railway has exactly one proxy in front; elsewhere set TRUST_PROXY to the number of proxies.
+function trustProxySetting(raw: string | undefined): boolean | number | string {
+  const value = raw?.trim();
+  if (!value) return process.env.RAILWAY_PROJECT_ID ? 1 : false;
+  if (/^\d+$/.test(value)) return Number(value);
+  if (value === 'true' || value === 'false') return value === 'true';
+  return value; // proxy addresses, e.g. "loopback, 10.0.0.0/8"
+}
+const trustProxy = trustProxySetting(process.env.TRUST_PROXY);
 const webDir = process.env.WEB_DIR ? path.resolve(process.env.WEB_DIR) : path.join(import.meta.dirname, 'web');
 
 const { app, ctx, close } = createApp({
@@ -24,6 +34,7 @@ const { app, ctx, close } = createApp({
   sessionSecret: process.env.SESSION_SECRET,
   webDir,
   storageWarning,
+  trustProxy,
 });
 
 if (storageWarning) console.warn(`⚠ ${storageWarning}`);

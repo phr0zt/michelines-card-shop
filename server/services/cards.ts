@@ -13,7 +13,7 @@ import type {
 import type { AiJobKind, PriceConfidence } from '../../shared/constants';
 import type { Db } from '../db';
 import { badRequest, conflict, notFound } from '../lib/http';
-import { buildSearchText, searchClause } from '../lib/search';
+import { buildPublicSearchText, buildSearchText, searchClause } from '../lib/search';
 import { isIsoDate, nowIso } from '../lib/time';
 import { bool, CARD_SUMMARY_SQL, imageFromRow, logActivity, summaryFromPrefixed, type ImageRow } from './common';
 import type { ImageStore } from './images';
@@ -77,6 +77,7 @@ export interface CardRow {
   ai_confidence: number | null;
   ai_notes: string;
   search_text: string;
+  public_search_text: string;
   created_at: string;
   updated_at: string;
   sold_at: string | null;
@@ -344,7 +345,11 @@ function sortImages(a: CardImage, b: CardImage): number {
 export function refreshSearchText(db: Db, id: number): void {
   const row = db.prepare('SELECT * FROM cards WHERE id = ?').get(id) as CardRow | undefined;
   if (!row) return;
-  db.prepare('UPDATE cards SET search_text = ? WHERE id = ?').run(buildSearchText(row), id);
+  db.prepare('UPDATE cards SET search_text = ?, public_search_text = ? WHERE id = ?').run(
+    buildSearchText(row),
+    buildPublicSearchText(row),
+    id,
+  );
 }
 
 /**

@@ -27,6 +27,8 @@ export interface AppOptions {
   aiConcurrency?: number;
   /** Shown to the owner in the admin when data isn't on persistent storage. */
   storageWarning?: string | null;
+  /** Express "trust proxy" setting: how many reverse proxies sit in front (default: none). */
+  trustProxy?: boolean | number | string;
 }
 
 /** A random secret persisted next to the database, so logins survive restarts. */
@@ -71,7 +73,8 @@ export function createApp(opts: AppOptions) {
 
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  // Only trust X-Forwarded-For from proxies we know are there; otherwise clients could fake their IP.
+  app.set('trust proxy', opts.trustProxy ?? false);
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');

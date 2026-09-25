@@ -34,6 +34,7 @@ import { NotesPanel } from './NotesPanel';
 import { PhotoPanel } from './PhotoPanel';
 import { SalesPanel } from './SalesPanel';
 import { SellDialog, type SellPrefill } from './SellDialog';
+import { UnsavedEditsProvider, useUnsavedEditsRegistry } from './unsaved';
 import { ValuePanel } from './ValuePanel';
 
 export default function CardPage() {
@@ -50,7 +51,8 @@ export default function CardPage() {
   if (query.error || !query.data) {
     return <Alert tone="critical" title="Couldn’t load this card">{errorMessage(query.error)}</Alert>;
   }
-  return <CardView card={query.data} />;
+  // Keyed by card, so moving to another card never carries over one card's unsaved edits.
+  return <CardView key={query.data.id} card={query.data} />;
 }
 
 const MANUAL_CHOICES: { value: CardStatus | 'auto'; label: string }[] = [
@@ -70,6 +72,7 @@ function CardView({ card }: { card: CardDetail }) {
   const [sellOpen, setSellOpen] = useState(false);
   const [sellPrefill, setSellPrefill] = useState<SellPrefill | undefined>();
   const [approving, setApproving] = useState(false);
+  const unsaved = useUnsavedEditsRegistry();
 
   const label = cardLabel(card);
   const jobs = activeJobs(card);
@@ -94,6 +97,10 @@ function CardView({ card }: { card: CardDetail }) {
   async function approve(goNext: boolean) {
     setApproving(true);
     try {
+      // Save any fixes typed into the panels first, so approving never drops them.
+      for (const edit of unsaved.pending()) {
+        if (!(await edit.save())) return;
+      }
       applyCard(await api.updateCard(card.id, { status: 'in_stock' }));
       toast.success('Approved — it’s in your inventory');
       if (goNext) {
@@ -141,119 +148,121 @@ function CardView({ card }: { card: CardDetail }) {
   const manualValue = ['draft', 'pending', 'keeper'].includes(card.status) ? card.status : 'auto';
 
   return (
-    <div>
-      <nav className="mb-3 flex items-center gap-1 text-sm text-muted" aria-label="Breadcrumb">
-        <Link to="/admin/cards" className="hover:text-ink">
-          Inventory
-        </Link>
-        <ChevronRight className="size-4" />
-        <span className="font-mono text-ink-2">{card.sku}</span>
-      </nav>
+    <UnsavedEditsProvider registry={unsaved}>
+      <div>
+        <nav className="mb-3 flex items-center gap-1 text-sm text-muted" aria-label="Breadcrumb">
+          <Link to="/admin/cards" className="hover:text-ink">
+            Inventory
+          </Link>
+          <ChevronRight className="size-4" />
+          <span className="font-mono text-ink-2">{card.sku}</span>
+        </nav>
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{label}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusBadge status={card.status} />
-            <CardFlags card={card} />
-            {card.parallel && <span className="text-sm text-ink-2">{card.parallel}</span>}
-          </div>
-          <div className="mt-1.5 text-sm text-muted">
-            {location ? `📍 ${location}` : 'No binder location yet'}
-            {card.quantity > 1 && ` · ${remaining} of ${card.quantity} left`}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {card.status !== 'sold' && (
-            <Select aria-label="Status" value={manualValue} onChange={(e) => setStatus(e.target.value)} className="w-auto">
-              {MANUAL_CHOICES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </Select>
-          )}
-          {remaining > 0 && (
-            <Button variant="primary" icon={<BadgeDollarSign className="size-4" />} onClick={() => openSell()}>
-              Mark as sold
-            </Button>
-          )}
-          <Menu
-            trigger={(props) => (
-              <IconButton label="More actions" {...props} className="border border-line-strong">
-                <MoreHorizontal className="size-5" />
-              </IconButton>
-            )}
-            items={[
-              { label: 'Print index card', icon: <Printer />, onSelect: () => window.open(`/admin/print?ids=${card.id}&mode=sheet`, '_blank') },
-              { label: 'Print sleeve label', icon: <TagIcon />, onSelect: () => window.open(`/admin/print?ids=${card.id}&mode=labels`, '_blank') },
-              { label: 'Download as file (JSON)', icon: <Download />, onSelect: exportJson },
-              'divider',
-              { label: 'Delete card', icon: <Trash2 />, danger: true, onSelect: remove },
-            ]}
-          />
-        </div>
-      </div>
-
-      {card.status === 'draft' && (
-        <Alert
-          tone="warning"
-          className="mb-5"
-          title={identifying ? 'The AI is identifying this card…' : 'Needs review'}
-          action={
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => approve(false)} loading={approving} disabled={identifying}>
-                Approve
-              </Button>
-              <Button size="sm" variant="primary" icon={<CheckCircle2 className="size-4" />} onClick={() => approve(true)} disabled={approving || identifying}>
-                Approve & next
-              </Button>
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight">{label}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusBadge status={card.status} />
+              <CardFlags card={card} />
+              {card.parallel && <span className="text-sm text-ink-2">{card.parallel}</span>}
             </div>
-          }
-        >
-          Check the photos and details below. Fix anything the AI got wrong, then approve it into your inventory.
-        </Alert>
-      )}
-
-      {card.possible_duplicates.length > 0 && card.status !== 'sold' && (
-        <Alert tone="info" className="mb-5" title="You may already have this card">
-          Same player, year, set, number and parallel as{' '}
-          {card.possible_duplicates.map((d, i) => (
-            <span key={d.id}>
-              {i > 0 && ', '}
-              <Link to={`/admin/cards/${d.id}`} className="font-mono font-medium text-primary hover:underline">
-                {d.sku}
-              </Link>
-            </span>
-          ))}
-          . If it’s a second copy, you can delete this one and raise the quantity on the other — or keep both if you track copies separately.
-        </Alert>
-      )}
-
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <div className="flex flex-col gap-4 lg:col-span-4">
-          <div className="flex flex-col gap-4 lg:sticky lg:top-20">
-            <PhotoPanel card={card} label={label} />
-            <AiPanel card={card} />
-            <SkuBox card={card} />
+            <div className="mt-1.5 text-sm text-muted">
+              {location ? `📍 ${location}` : 'No binder location yet'}
+              {card.quantity > 1 && ` · ${remaining} of ${card.quantity} left`}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {card.status !== 'sold' && (
+              <Select aria-label="Status" value={manualValue} onChange={(e) => setStatus(e.target.value)} className="w-auto">
+                {MANUAL_CHOICES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {remaining > 0 && (
+              <Button variant="primary" icon={<BadgeDollarSign className="size-4" />} onClick={() => openSell()}>
+                Mark as sold
+              </Button>
+            )}
+            <Menu
+              trigger={(props) => (
+                <IconButton label="More actions" {...props} className="border border-line-strong">
+                  <MoreHorizontal className="size-5" />
+                </IconButton>
+              )}
+              items={[
+                { label: 'Print index card', icon: <Printer />, onSelect: () => window.open(`/admin/print?ids=${card.id}&mode=sheet`, '_blank') },
+                { label: 'Print sleeve label', icon: <TagIcon />, onSelect: () => window.open(`/admin/print?ids=${card.id}&mode=labels`, '_blank') },
+                { label: 'Download as file (JSON)', icon: <Download />, onSelect: exportJson },
+                'divider',
+                { label: 'Delete card', icon: <Trash2 />, danger: true, onSelect: remove },
+              ]}
+            />
           </div>
         </div>
-        <div className="flex min-w-0 flex-col gap-5 lg:col-span-8">
-          <DetailsForm card={card} locked={identifying} />
-          <ValuePanel card={card} researching={researching} />
-          <ListingsPanel card={card} onSellHere={(l: Listing) => openSell({ platform_id: l.platform_id, price_cents: l.price_cents })} />
-          <ListingTextPanel card={card} />
-          <InquiriesPanel card={card} onSell={(i: Inquiry) => openSell({ inquiry: i })} />
-          <SalesPanel card={card} onSell={() => openSell()} />
-          <NotesPanel card={card} />
-          <p className="text-center text-xs text-muted">
-            Added {fmt.date(card.created_at)} · last updated {fmt.relative(card.updated_at)}
-          </p>
-        </div>
-      </div>
 
-      {sellOpen && <SellDialog card={card} open={sellOpen} onClose={() => setSellOpen(false)} prefill={sellPrefill} />}
-    </div>
+        {card.status === 'draft' && (
+          <Alert
+            tone="warning"
+            className="mb-5"
+            title={identifying ? 'The AI is identifying this card…' : 'Needs review'}
+            action={
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => approve(false)} loading={approving} disabled={identifying}>
+                  Approve
+                </Button>
+                <Button size="sm" variant="primary" icon={<CheckCircle2 className="size-4" />} onClick={() => approve(true)} disabled={approving || identifying}>
+                  Approve & next
+                </Button>
+              </div>
+            }
+          >
+            Check the photos and details below. Fix anything the AI got wrong, then approve it into your inventory.
+          </Alert>
+        )}
+
+        {card.possible_duplicates.length > 0 && card.status !== 'sold' && (
+          <Alert tone="info" className="mb-5" title="You may already have this card">
+            Same player, year, set, number and parallel as{' '}
+            {card.possible_duplicates.map((d, i) => (
+              <span key={d.id}>
+                {i > 0 && ', '}
+                <Link to={`/admin/cards/${d.id}`} className="font-mono font-medium text-primary hover:underline">
+                  {d.sku}
+                </Link>
+              </span>
+            ))}
+            . If it’s a second copy, you can delete this one and raise the quantity on the other — or keep both if you track copies separately.
+          </Alert>
+        )}
+
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+          <div className="flex flex-col gap-4 lg:col-span-4">
+            <div className="flex flex-col gap-4 lg:sticky lg:top-20">
+              <PhotoPanel card={card} label={label} />
+              <AiPanel card={card} />
+              <SkuBox card={card} />
+            </div>
+          </div>
+          <div className="flex min-w-0 flex-col gap-5 lg:col-span-8">
+            <DetailsForm card={card} locked={identifying} />
+            <ValuePanel card={card} researching={researching} />
+            <ListingsPanel card={card} onSellHere={(l: Listing) => openSell({ platform_id: l.platform_id, price_cents: l.price_cents })} />
+            <ListingTextPanel card={card} locked={identifying} />
+            <InquiriesPanel card={card} onSell={(i: Inquiry) => openSell({ inquiry: i })} />
+            <SalesPanel card={card} onSell={() => openSell()} />
+            <NotesPanel card={card} />
+            <p className="text-center text-xs text-muted">
+              Added {fmt.date(card.created_at)} · last updated {fmt.relative(card.updated_at)}
+            </p>
+          </div>
+        </div>
+
+        {sellOpen && <SellDialog card={card} open={sellOpen} onClose={() => setSellOpen(false)} prefill={sellPrefill} />}
+      </div>
+    </UnsavedEditsProvider>
   );
 }
 

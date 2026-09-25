@@ -34,6 +34,8 @@ function sha256(s: string): Buffer {
  */
 export function createAuth(opts: { password: string; secret: string }) {
   const limiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
+  // Backstop for guesses spread over many addresses: 200 wrong passwords an hour, shop-wide.
+  const failures = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 200 });
   const key = crypto.createHmac('sha256', opts.secret).update(`pw:${opts.password}`).digest();
 
   const sign = (payload: string) => crypto.createHmac('sha256', key).update(payload).digest('base64url');
@@ -72,8 +74,12 @@ export function createAuth(opts: { password: string; secret: string }) {
       throw new HttpError(503, 'No admin password is set. Add ADMIN_PASSWORD to the server environment and restart.');
     }
     if (!limiter.hit(ip)) throw new HttpError(429, 'Too many attempts. Wait 15 minutes and try again.');
+    if (failures.limited('all')) {
+      throw new HttpError(429, 'Too many wrong passwords have been tried recently. Wait an hour and try again.');
+    }
     const given = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!crypto.timingSafeEqual(sha256(given), sha256(opts.password))) {
+      failures.hit('all');
       throw new HttpError(401, 'Wrong password');
     }
     limiter.reset(ip);

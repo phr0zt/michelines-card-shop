@@ -23,6 +23,7 @@ import { api, errorMessage } from '../../../lib/api';
 import { useFormat } from '../../../lib/format';
 import { useApplyCard } from '../../../lib/queries';
 import { useSyncedForm } from '../../../lib/useSyncedForm';
+import { useReportUnsaved } from './unsaved';
 
 const ICONS: Record<string, ReactNode> = {
   created: <Plus />,
@@ -50,19 +51,22 @@ export function NotesPanel({ card }: { card: CardDetail }) {
   const [showAll, setShowAll] = useState(false);
   const activity = showAll ? card.activity : card.activity.slice(0, 12);
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     try {
       const detail = await api.updateCard(card.id, { notes: form.values.notes });
       applyCard(detail);
       form.markSaved({ notes: detail.notes });
       toast.success('Notes saved');
+      return true;
     } catch (err) {
       toast.error(errorMessage(err));
+      return false;
     } finally {
       setBusy(false);
     }
   }
+  useReportUnsaved('notes', 'your notes', form.dirty, save);
 
   return (
     <Panel id="notes" title="Notes & history">

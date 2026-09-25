@@ -47,6 +47,14 @@ describe('auth', () => {
     await agent.get('/api/cards').expect(401);
   });
 
+  it('rate-limits wrong passwords even when the client fakes X-Forwarded-For', async () => {
+    t = makeTestApp();
+    for (let i = 0; i < 10; i++) {
+      await request(t.app).post('/api/auth/login').set('X-Forwarded-For', `10.0.0.${i}`).send({ password: 'nope' }).expect(401);
+    }
+    await request(t.app).post('/api/auth/login').set('X-Forwarded-For', '10.0.0.99').send({ password: 'nope' }).expect(429);
+  });
+
   it('health check and public endpoints need no login', async () => {
     t = makeTestApp();
     await request(t.app).get('/api/health').expect(200);
@@ -278,6 +286,17 @@ describe('storefront', () => {
       .send({ name: 'Bot', contact: 'bot@example.com', website: 'http://spam' })
       .expect(201);
     expect((await agent.get('/api/inquiries').expect(200)).body.total).toBe(1);
+
+    // The shop's search only looks at what the shop shows.
+    const search = async (q: string) => (await request(app.app).get('/api/public/cards').query({ q }).expect(200)).body.total;
+    expect(await search('test player')).toBe(1);
+    for (const q of ['secret', 'binder', 'note', 'Tremblay', '0042', 'consign']) expect(await search(q)).toBe(0);
+    await agent
+      .patch(`/api/cards/${card.id}`)
+      .send({ acquired_from: 'Tremblay garage sale', cert_number: '12340042', tags: 'consignment' })
+      .expect(200);
+    for (const q of ['Tremblay', '0042', 'consign']) expect(await search(q)).toBe(0);
+    expect((await agent.get('/api/cards').query({ q: 'tremblay' }).expect(200)).body.total).toBe(1);
 
     await agent.patch('/api/settings').send({ storefront_show_prices: false }).expect(200);
     expect((await request(app.app).get(`/api/public/cards/${card.sku}`).expect(200)).body.price_cents).toBeNull();

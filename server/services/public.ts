@@ -127,7 +127,7 @@ export function listPublicCards(db: Db, query: z.infer<typeof publicQuerySchema>
   const clauses = [VISIBLE];
   const params: unknown[] = [];
   if (query.q) {
-    const s = searchClause(query.q);
+    const s = searchClause(query.q, 'c.public_search_text');
     if (s.sql) {
       clauses.push(`(${s.sql})`);
       params.push(...s.params);

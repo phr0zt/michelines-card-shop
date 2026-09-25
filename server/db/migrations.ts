@@ -1,10 +1,11 @@
 import type Database from 'better-sqlite3';
+import { buildPublicSearchText, type PublicSearchableCard } from '../lib/search';
 
 /**
  * Append-only list of schema migrations. Never edit a migration that has
  * shipped; add a new one instead.
  */
-const MIGRATIONS: { version: number; sql: string }[] = [
+const MIGRATIONS: { version: number; sql: string; after?: (db: Database.Database) => void }[] = [
   {
     version: 1,
     sql: `
@@ -224,6 +225,16 @@ CREATE TABLE value_snapshots (
 );
 `,
   },
+  {
+    // The public shop searches its own column, built only from fields the shop shows.
+    version: 2,
+    sql: `ALTER TABLE cards ADD COLUMN public_search_text TEXT NOT NULL DEFAULT '';`,
+    after(db) {
+      const update = db.prepare('UPDATE cards SET public_search_text = ? WHERE id = ?');
+      const rows = db.prepare('SELECT * FROM cards').all() as (PublicSearchableCard & { id: number })[];
+      for (const row of rows) update.run(buildPublicSearchText(row), row.id);
+    },
+  },
 ];
 
 export function migrate(db: Database.Database): void {
@@ -238,6 +249,7 @@ export function migrate(db: Database.Database): void {
     if (applied.has(m.version)) continue;
     db.transaction(() => {
       db.exec(m.sql);
+      m.after?.(db);
       db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
         m.version,
         new Date().toISOString(),

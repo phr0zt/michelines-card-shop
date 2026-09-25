@@ -10,6 +10,7 @@ import { useToast } from '../../../components/ui/Toast';
 import { api, errorMessage } from '../../../lib/api';
 import { useApplyCard, useSettings } from '../../../lib/queries';
 import { useSyncedForm } from '../../../lib/useSyncedForm';
+import { useReportUnsaved } from './unsaved';
 
 export function useCopy() {
   const toast = useToast();
@@ -28,7 +29,7 @@ export function useCopy() {
   };
 }
 
-export function ListingTextPanel({ card }: { card: CardDetail }) {
+export function ListingTextPanel({ card, locked }: { card: CardDetail; locked: boolean }) {
   const settings = useSettings().data;
   const toast = useToast();
   const applyCard = useApplyCard();
@@ -55,19 +56,22 @@ export function ListingTextPanel({ card }: { card: CardDetail }) {
   );
   const current = texts.find((t) => t.platform === platform) ?? texts[0];
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     try {
       const detail = await api.updateCard(card.id, form.changes());
       applyCard(detail);
       form.markSaved({ title: detail.title, description: detail.description });
       toast.success('Listing text saved');
+      return true;
     } catch (err) {
       toast.error(errorMessage(err));
+      return false;
     } finally {
       setBusy(false);
     }
   }
+  useReportUnsaved('listing-text', 'the listing text', form.dirty, save);
 
   return (
     <Panel
@@ -88,35 +92,38 @@ export function ListingTextPanel({ card }: { card: CardDetail }) {
       }
     >
       <div className="grid grid-cols-1 gap-4">
-        <Field
-          label="Title"
-          htmlFor="lt-title"
-          hint={
-            <span className={clsx(form.values.title.length > 80 && 'text-critical-text')}>
-              {form.values.title.length}/80 characters (eBay’s limit)
-            </span>
-          }
-        >
-          <div className="flex gap-2">
-            <Input id="lt-title" value={form.values.title} onChange={(e) => form.set('title', e.target.value)} placeholder={buildListingTitle(card)} />
-            <Button
-              icon={<Wand2 className="size-4" />}
-              onClick={() => form.set('title', buildListingTitle(card, 80))}
-              title="Build a title from the card details"
-            >
-              <span className="hidden sm:inline">From details</span>
-            </Button>
-          </div>
-        </Field>
-        <Field label="Description" htmlFor="lt-desc">
-          <Textarea
-            id="lt-desc"
-            rows={3}
-            value={form.values.description}
-            onChange={(e) => form.set('description', e.target.value)}
-            placeholder="A few honest sentences about the card and its condition."
-          />
-        </Field>
+        {/* Locked while the AI identifies the card, since it writes these too. */}
+        <fieldset disabled={locked} className="grid grid-cols-1 gap-4">
+          <Field
+            label="Title"
+            htmlFor="lt-title"
+            hint={
+              <span className={clsx(form.values.title.length > 80 && 'text-critical-text')}>
+                {form.values.title.length}/80 characters (eBay’s limit)
+              </span>
+            }
+          >
+            <div className="flex gap-2">
+              <Input id="lt-title" value={form.values.title} onChange={(e) => form.set('title', e.target.value)} placeholder={buildListingTitle(card)} />
+              <Button
+                icon={<Wand2 className="size-4" />}
+                onClick={() => form.set('title', buildListingTitle(card, 80))}
+                title="Build a title from the card details"
+              >
+                <span className="hidden sm:inline">From details</span>
+              </Button>
+            </div>
+          </Field>
+          <Field label="Description" htmlFor="lt-desc">
+            <Textarea
+              id="lt-desc"
+              rows={3}
+              value={form.values.description}
+              onChange={(e) => form.set('description', e.target.value)}
+              placeholder="A few honest sentences about the card and its condition."
+            />
+          </Field>
+        </fieldset>
 
         <div className="rounded-xl border border-line">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">

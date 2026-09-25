@@ -10,6 +10,7 @@ import { useToast } from '../../../components/ui/Toast';
 import { api, errorMessage } from '../../../lib/api';
 import { useApplyCard, useFacets } from '../../../lib/queries';
 import { useSyncedForm } from '../../../lib/useSyncedForm';
+import { useReportUnsaved } from './unsaved';
 
 const FIELDS = [
   'category',
@@ -54,19 +55,22 @@ export function DetailsForm({ card, locked }: { card: CardDetail; locked: boolea
   const { values, set, dirty, serverChanged } = form;
   const [busy, setBusy] = useState(false);
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     try {
       const detail = await api.updateCard(card.id, form.changes());
       applyCard(detail);
       form.markSaved(pickValues(detail));
       toast.success('Card details saved');
+      return true;
     } catch (err) {
       toast.error(errorMessage(err));
+      return false;
     } finally {
       setBusy(false);
     }
   }
+  useReportUnsaved('details', 'card details', dirty, save);
 
   const categories = (CATEGORIES as readonly string[]).includes(values.category)
     ? CATEGORIES
