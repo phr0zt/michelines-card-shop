@@ -45,8 +45,8 @@ Open <http://localhost:5173/admin> and sign in with your `ADMIN_PASSWORD`. The s
 **Try it with sample data first:**
 
 ```bash
-npm run demo                                   # creates ./demo-data with 13 sample cards
-DATA_DIR=./demo-data npm run dev
+npm run demo          # creates ./demo-data with 13 sample cards (drawn photos, made-up prices)
+npm run dev:demo      # runs the app on that sample data instead of your real data
 ```
 
 ## Put it online (Railway)

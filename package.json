@@ -19,7 +19,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node tests/e2e/smoke.mjs",
-    "demo": "DATA_DIR=./demo-data tsx scripts/seed-demo.ts"
+    "demo": "tsx scripts/seed-demo.ts",
+    "dev:demo": "concurrently -k -n server,web -c blue,magenta \"tsx watch --clear-screen=false server/index.ts --data=./demo-data\" \"vite\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

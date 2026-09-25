@@ -8,7 +8,7 @@ Trading-card inventory + cross-listing tracker + public shop. See README.md for 
 - `npm test` — Vitest unit + API tests (`tests/*.test.ts`); API tests use a temp data dir and a fake Claude client
 - `npm run typecheck` — server/shared/tests (`tsconfig.server.json`) and web (`tsconfig.web.json`)
 - `npm run build && npm run test:e2e` — Playwright smoke test through the real UI (`tests/e2e/smoke.mjs`; set `CHROME_PATH`)
-- `npm run demo` then `DATA_DIR=./demo-data npm run dev` — sample data
+- `npm run demo` then `npm run dev:demo` — sample data in ./demo-data (the server also accepts `--data=<dir>`)
 
 ## Conventions
 

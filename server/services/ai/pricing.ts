@@ -9,6 +9,7 @@ import type { PriceResult } from '../priceChecks';
 import { fallbackParams, type AiClient } from './client';
 import { addUsage, emptyUsage, type UsageTotals } from './costs';
 import { AiError } from './errors';
+import { normalizeConfidence } from './identify';
 
 type MessageParam = Anthropic.Beta.Messages.BetaMessageParam;
 type ContentBlock = Anthropic.Beta.Messages.BetaContentBlock;
@@ -87,7 +88,7 @@ const ReportSchema = z.object({
   high: z.number().nullable(),
   suggested_list_price: z.number().nullable(),
   quick_sale_price: z.number().nullable(),
-  confidence: z.enum(['low', 'medium', 'high']),
+  confidence: z.string(),
   summary: z.string(),
   advice: z.string(),
   comps: z.array(
@@ -262,7 +263,7 @@ function toPriceResult(
     high_cents: found ? toCents(r.high) : null,
     suggested_price_cents: found ? toCents(r.suggested_list_price) : null,
     quick_sale_cents: found ? toCents(r.quick_sale_price) : null,
-    confidence: r.confidence as PriceConfidence,
+    confidence: normalizeConfidence(r.confidence) as PriceConfidence,
     summary: r.summary.slice(0, 4000),
     advice: r.advice.slice(0, 4000),
     comps,

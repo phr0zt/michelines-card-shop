@@ -393,6 +393,7 @@ export function createCard(db: Db, input: Partial<CardFields> & { status?: CardS
     const settings = getSettings(db);
     db.prepare('UPDATE cards SET sku = ? WHERE id = ?').run(nextSku(db, id, settings.sku_prefix), id);
     refreshSearchText(db, id);
+    recomputeStatus(db, id);
     logActivity(db, id, 'created', 'Card added to inventory');
     return id;
   })();

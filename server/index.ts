@@ -6,12 +6,13 @@ import { recordValueSnapshot } from './services/analytics';
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
 
 const port = Number(process.env.PORT ?? 3001);
-// An explicit DATA_DIR wins, then an attached Railway volume, then the image default (/data in Docker).
+// `--data=<dir>` or DATA_DIR wins, then an attached Railway volume, then the image default (/data in Docker).
+const dataArg = process.argv.find((a) => a.startsWith('--data='))?.slice('--data='.length);
 const dataDir = path.resolve(
-  process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DEFAULT_DATA_DIR || './data',
+  dataArg || process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DEFAULT_DATA_DIR || './data',
 );
 const storageWarning =
-  process.env.RAILWAY_PROJECT_ID && !process.env.RAILWAY_VOLUME_MOUNT_PATH && !process.env.DATA_DIR
+  process.env.RAILWAY_PROJECT_ID && !process.env.RAILWAY_VOLUME_MOUNT_PATH && !process.env.DATA_DIR && !dataArg
     ? 'No Railway volume is attached, so cards and photos will be erased on the next deploy. Add a volume to this service (mount path /data) in Railway.'
     : null;
 const adminPassword = process.env.ADMIN_PASSWORD ?? '';

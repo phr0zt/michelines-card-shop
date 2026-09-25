@@ -4,6 +4,7 @@ import { allocateCents, estimateFeesCents, parseMoneyToCents, saleNetCents } fro
 import { buildSearchText, tokenizeQuery } from '../server/lib/search';
 import { toCsv } from '../server/services/exports';
 import { bucketKey, bucketsBetween } from '../server/services/analytics';
+import { normalizeCategory, normalizeCondition, normalizeConfidence } from '../server/services/ai/identify';
 
 const card = {
   category: 'Hockey',
@@ -129,5 +130,25 @@ describe('date buckets', () => {
     expect(bucketKey('2025-03-16', 'week')).toBe('2025-03-10'); // Sunday → previous Monday
     expect(bucketKey('2025-03-17', 'week')).toBe('2025-03-17');
     expect(bucketsBetween('2024-11-20', '2025-02-01', 'month')).toEqual(['2024-11', '2024-12', '2025-01', '2025-02']);
+  });
+});
+
+describe('AI answer normalisation', () => {
+  it('maps loose categories onto the known list', () => {
+    expect(normalizeCategory('hockey', 'Baseball')).toBe('Hockey');
+    expect(normalizeCategory('Pokemon', 'Hockey')).toBe('Pokémon');
+    expect(normalizeCategory('NHL hockey card', 'Baseball')).toBe('Hockey');
+    expect(normalizeCategory('Magic the Gathering', 'Hockey')).toBe('Magic: The Gathering');
+    expect(normalizeCategory('something odd', 'Baseball')).toBe('Baseball');
+  });
+
+  it('maps grading shorthand onto conditions', () => {
+    expect(normalizeCondition('Near Mint-Mint')).toBe('Near Mint-Mint');
+    expect(normalizeCondition('NM-MT')).toBe('Near Mint-Mint');
+    expect(normalizeCondition('nm')).toBe('Near Mint');
+    expect(normalizeCondition('EX')).toBe('Excellent');
+    expect(normalizeCondition('Unknown')).toBeNull();
+    expect(normalizeConfidence('High')).toBe('high');
+    expect(normalizeConfidence('fairly sure')).toBe('medium');
   });
 });

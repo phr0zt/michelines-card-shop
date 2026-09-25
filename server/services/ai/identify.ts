@@ -12,9 +12,12 @@ import { fallbackParams, type AiClient } from './client';
 import { addUsage, emptyUsage, type UsageTotals } from './costs';
 import { AiError } from './errors';
 
+// Category, condition and confidence are plain strings with the choices in the description:
+// the SDK's schema transform turns `enum` into a description hint anyway, and a strict zod enum
+// would reject the whole identification over one off-list word. They're normalised below.
 export const IdentificationSchema = z.object({
   is_trading_card: z.boolean().describe('False if the photos do not show a trading card.'),
-  category: z.enum(CATEGORIES),
+  category: z.string().describe(`Exactly one of: ${CATEGORIES.join(' | ')}`),
   player: z.string().describe('Player, or for TCG cards the character/card name. Empty if unknown.'),
   team: z.string(),
   year: z.string().describe('Year or season as the set uses it, e.g. "1990-91" for most hockey sets, "2023" for baseball.'),
@@ -31,14 +34,14 @@ export const IdentificationSchema = z.object({
   grading_company: z.string().describe('PSA, BGS, SGC, CGC, … when graded; else empty.'),
   grade: z.string().describe('Numeric or label grade from the slab, e.g. "9", "9.5", "Authentic".'),
   cert_number: z.string().describe('Certification number from the slab label, only if clearly readable.'),
-  condition: z.enum([...CONDITIONS, 'Unknown']),
+  condition: z.string().describe(`One of: ${CONDITIONS.join(' | ')} | Unknown`),
   condition_notes: z.string().describe('What you can see: centering, corners, edges, surface; and what the photos cannot show.'),
   title: z.string().describe('eBay-style listing title, at most 80 characters.'),
   description: z.string().describe('2–4 plain sentences for a buyer. Honest condition summary. No hype, no emojis.'),
   search_query: z.string().describe('Words to type into eBay sold listings to find this exact card.'),
   notable: z.string().describe('Anything that matters for value: Hall of Famer, key rookie, short print, error card… Empty if nothing.'),
   uncertainties: z.string().describe('Anything you are unsure about. Empty if nothing.'),
-  confidence: z.enum(['low', 'medium', 'high']),
+  confidence: z.string().describe('How sure you are overall: low | medium | high'),
 });
 
 export type Identification = z.infer<typeof IdentificationSchema>;
@@ -134,6 +137,66 @@ export async function runIdentification(
 
 const CONFIDENCE_SCORE = { low: 0.4, medium: 0.7, high: 0.9 } as const;
 
+const fold = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+export function normalizeCategory(value: string, fallback: string): string {
+  const v = fold(value);
+  const exact = CATEGORIES.find((c) => fold(c) === v);
+  if (exact) return exact;
+  const rules: [RegExp, string][] = [
+    [/pokemon|pkmn/, 'Pokémon'],
+    [/magic|mtg/, 'Magic: The Gathering'],
+    [/yu ?gi ?oh/, 'Yu-Gi-Oh!'],
+    [/one piece/, 'One Piece'],
+    [/lorcana/, 'Lorcana'],
+    [/hockey|nhl/, 'Hockey'],
+    [/baseball|mlb/, 'Baseball'],
+    [/basketball|nba/, 'Basketball'],
+    [/football|nfl|cfl/, 'Football'],
+    [/soccer|futbol/, 'Soccer'],
+    [/racing|nascar|f1|formula/, 'Racing'],
+    [/wrestling|wwe|wwf/, 'Wrestling'],
+    [/golf/, 'Golf'],
+    [/tcg|trading card game/, 'Other TCG'],
+    [/non ?sport|entertainment|movie|tv/, 'Non-Sport'],
+  ];
+  for (const [re, category] of rules) if (re.test(v)) return category;
+  return fallback || 'Other Sports';
+}
+
+const CONDITION_ALIASES: [RegExp, string][] = [
+  [/^gem/, 'Gem Mint'],
+  [/^(nm ?mt|near mint ?mint)/, 'Near Mint-Mint'],
+  [/^(ex ?mt|excellent ?mint)/, 'Excellent-Mint'],
+  [/^(vg ?ex|very good ?excellent)/, 'Very Good-Excellent'],
+  [/^(nm|near mint)/, 'Near Mint'],
+  [/^(ex|excellent)/, 'Excellent'],
+  [/^(vg|very good)/, 'Very Good'],
+  [/^mint/, 'Mint'],
+  [/^good/, 'Good'],
+  [/^fair/, 'Fair'],
+  [/^poor/, 'Poor'],
+];
+
+export function normalizeCondition(value: string): string | null {
+  const v = fold(value);
+  const exact = CONDITIONS.find((c) => fold(c) === v);
+  if (exact) return exact;
+  for (const [re, condition] of CONDITION_ALIASES) if (re.test(v)) return condition;
+  return null;
+}
+
+export function normalizeConfidence(value: string): keyof typeof CONFIDENCE_SCORE {
+  const v = value.toLowerCase();
+  return v.includes('high') ? 'high' : v.includes('low') ? 'low' : 'medium';
+}
+
 const TEXT_FIELDS = [
   'player',
   'team',
@@ -176,15 +239,17 @@ export function applyIdentification(db: Db, cardId: number, result: Identificati
     if (takeAll) updates[field] = result[field] ? 1 : 0;
     else if (result[field] && !card[field]) updates[field] = 1;
   }
-  if (takeAll || !card.category) updates.category = result.category;
-  if (result.condition !== 'Unknown' && (takeAll || !card.condition)) updates.condition = result.condition;
+  if (takeAll || !card.category) updates.category = normalizeCategory(result.category, card.category);
+  const condition = normalizeCondition(result.condition);
+  if (condition && (takeAll || !card.condition)) updates.condition = condition;
+  const confidence = normalizeConfidence(result.confidence);
 
   const notes = [result.notable && `Notable: ${result.notable}`, result.uncertainties && `Unsure about: ${result.uncertainties}`]
     .filter(Boolean)
     .join('\n');
   const now = nowIso();
   updates.ai_identified_at = now;
-  updates.ai_confidence = CONFIDENCE_SCORE[result.confidence];
+  updates.ai_confidence = CONFIDENCE_SCORE[confidence];
   updates.ai_notes = result.is_trading_card ? notes : `This may not be a trading card. ${notes}`.trim();
   updates.updated_at = now;
 
@@ -201,7 +266,7 @@ export function applyIdentification(db: Db, cardId: number, result: Identificati
       cardId,
       'ai',
       result.is_trading_card
-        ? `AI identified this as ${cardLabel(after)} (${result.confidence} confidence)`
+        ? `AI identified this as ${cardLabel(after)} (${confidence} confidence)`
         : 'AI could not recognise a trading card in these photos',
     );
   })();
