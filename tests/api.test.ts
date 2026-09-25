@@ -68,6 +68,16 @@ describe('cards', () => {
     expect(card.activity[0].message).toContain('added');
   });
 
+  it('points out likely duplicates', async () => {
+    const { agent } = await setup();
+    const fields = { player: 'Connor McDavid', year: '2015-16', set_name: 'Upper Deck Series 1', card_number: '201' };
+    const a = await createCard(agent, fields, false);
+    const b = await createCard(agent, { ...fields, player: 'connor mcdavid' }, false);
+    await createCard(agent, { ...fields, parallel: 'Exclusives' }, false);
+    const detail = (await agent.get(`/api/cards/${b.id}`).expect(200)).body;
+    expect(detail.possible_duplicates.map((d: { id: number }) => d.id)).toEqual([a.id]);
+  });
+
   it('rejects files that are not images', async () => {
     const { agent } = await setup();
     const res = await agent

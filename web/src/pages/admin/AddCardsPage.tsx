@@ -229,6 +229,15 @@ function OptionsPanel({
             onChange={(e) => setOpt('isPublic', e.target.checked)}
           />
         </div>
+        <div className="rounded-xl bg-surface-2 p-3 text-xs text-ink-2">
+          <div className="mb-1 font-semibold text-ink">Photo tips for the best AI results</div>
+          <ul className="list-disc space-y-0.5 pl-4">
+            <li>Lay the card flat on a plain, dark background</li>
+            <li>Fill most of the photo with the card, straight on</li>
+            <li>Bright, even light — tilt slabs and top loaders to avoid glare</li>
+            <li>Make sure the card number and small print on the back are sharp</li>
+          </ul>
+        </div>
         {purchases.length > 0 && (
           <Field label="Part of a purchase" htmlFor="add-purchase" hint="Links the cost of a lot you bought.">
             <Select id="add-purchase" value={opts.purchaseId ?? ''} onChange={(e) => setOpt('purchaseId', e.target.value ? Number(e.target.value) : null)}>

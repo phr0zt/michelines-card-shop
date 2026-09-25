@@ -270,6 +270,8 @@ export interface CardDetail extends Card {
   activity: Activity[];
   jobs: AiJob[];
   purchase: Purchase | null;
+  /** Other unsold cards with the same player, year, set, number and parallel. */
+  possible_duplicates: CardSummary[];
 }
 
 export interface CardListResponse {

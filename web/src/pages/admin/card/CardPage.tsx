@@ -215,6 +215,21 @@ function CardView({ card }: { card: CardDetail }) {
         </Alert>
       )}
 
+      {card.possible_duplicates.length > 0 && card.status !== 'sold' && (
+        <Alert tone="info" className="mb-5" title="You may already have this card">
+          Same player, year, set, number and parallel as{' '}
+          {card.possible_duplicates.map((d, i) => (
+            <span key={d.id}>
+              {i > 0 && ', '}
+              <Link to={`/admin/cards/${d.id}`} className="font-mono font-medium text-primary hover:underline">
+                {d.sku}
+              </Link>
+            </span>
+          ))}
+          . If it’s a second copy, you can delete this one and raise the quantity on the other — or keep both if you track copies separately.
+        </Alert>
+      )}
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="flex flex-col gap-4 lg:col-span-4">
           <div className="flex flex-col gap-4 lg:sticky lg:top-20">

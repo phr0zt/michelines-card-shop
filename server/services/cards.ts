@@ -15,7 +15,7 @@ import type { Db } from '../db';
 import { badRequest, conflict, notFound } from '../lib/http';
 import { buildSearchText, searchClause } from '../lib/search';
 import { isIsoDate, nowIso } from '../lib/time';
-import { bool, imageFromRow, logActivity, type ImageRow } from './common';
+import { bool, CARD_SUMMARY_SQL, imageFromRow, logActivity, summaryFromPrefixed, type ImageRow } from './common';
 import type { ImageStore } from './images';
 import {
   activityFromRow,
@@ -309,8 +309,22 @@ export function getCardDetail(db: Db, id: number): CardDetail {
         )
         .get(row.purchase_id) as Record<string, unknown> | undefined)
     : undefined;
+  const duplicates =
+    row.player && row.card_number
+      ? (db
+          .prepare(
+            `SELECT ${CARD_SUMMARY_SQL} FROM cards c
+             WHERE c.id != ? AND c.status != 'sold'
+               AND c.player = ? COLLATE NOCASE AND c.year = ? COLLATE NOCASE AND c.card_number = ? COLLATE NOCASE
+               AND c.set_name = ? COLLATE NOCASE AND c.parallel = ? COLLATE NOCASE
+               AND c.is_graded = ? AND c.grade = ? COLLATE NOCASE
+             ORDER BY c.id LIMIT 5`,
+          )
+          .all(id, row.player, row.year, row.card_number, row.set_name, row.parallel, row.is_graded, row.grade) as Record<string, unknown>[])
+      : [];
   return {
     ...card,
+    possible_duplicates: duplicates.map(summaryFromPrefixed).filter((d): d is NonNullable<typeof d> => Boolean(d)),
     images: images.map(imageFromRow).sort(sortImages),
     listings: listings.map(listingFromRow),
     inquiries: inquiries.map(inquiryFromRow),
