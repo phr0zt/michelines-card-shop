@@ -1,0 +1,223 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/* Design tokens. Light is the default; dark comes from the OS setting or the in-app toggle. */
+:root {
+  color-scheme: light;
+  --bg: #f4f3ef;
+  --surface: #ffffff;
+  --surface-2: #f8f7f4;
+  --surface-3: #efeee9;
+  --border: rgba(11, 11, 11, 0.1);
+  --border-strong: rgba(11, 11, 11, 0.2);
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #6c6a65;
+  --primary: #1c5cab;
+  --primary-hover: #184f95;
+  --primary-soft: #e6effa;
+  --primary-text: #ffffff;
+  --focus: #2a78d6;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --good-soft: #e3f4e3;
+  --warning: #fab219;
+  --warning-text: #7a5200;
+  --warning-soft: #fff3d4;
+  --serious: #ec835a;
+  --serious-text: #9a3c14;
+  --serious-soft: #fdeae2;
+  --critical: #d03b3b;
+  --critical-text: #a32525;
+  --critical-soft: #fbe6e6;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --chart-muted: #898781;
+  --shadow: 0 1px 2px rgba(11, 11, 11, 0.06), 0 2px 8px rgba(11, 11, 11, 0.04);
+  --shadow-lg: 0 10px 40px rgba(11, 11, 11, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #212120;
+    --surface-3: #2a2a28;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.2);
+    --text: #ffffff;
+    --text-2: #c3c2b7;
+    --muted: #a3a19a;
+    --primary: #3987e5;
+    --primary-hover: #5598e7;
+    --primary-soft: rgba(57, 135, 229, 0.16);
+    --primary-text: #0b0b0b;
+    --focus: #5598e7;
+    --good-text: #3fcf3f;
+    --good-soft: rgba(12, 163, 12, 0.18);
+    --warning-text: #fab219;
+    --warning-soft: rgba(250, 178, 25, 0.16);
+    --serious-text: #f19a76;
+    --serious-soft: rgba(236, 131, 90, 0.16);
+    --critical-text: #f07373;
+    --critical-soft: rgba(208, 59, 59, 0.2);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --chart-muted: #898781;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.6);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #212120;
+  --surface-3: #2a2a28;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --text: #ffffff;
+  --text-2: #c3c2b7;
+  --muted: #a3a19a;
+  --primary: #3987e5;
+  --primary-hover: #5598e7;
+  --primary-soft: rgba(57, 135, 229, 0.16);
+  --primary-text: #0b0b0b;
+  --focus: #5598e7;
+  --good-text: #3fcf3f;
+  --good-soft: rgba(12, 163, 12, 0.18);
+  --warning-text: #fab219;
+  --warning-soft: rgba(250, 178, 25, 0.16);
+  --serious-text: #f19a76;
+  --serious-soft: rgba(236, 131, 90, 0.16);
+  --critical-text: #f07373;
+  --critical-soft: rgba(208, 59, 59, 0.2);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --chart-muted: #898781;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-on-primary: var(--primary-text);
+  --color-good: var(--good);
+  --color-good-text: var(--good-text);
+  --color-good-soft: var(--good-soft);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-warning-soft: var(--warning-soft);
+  --color-serious: var(--serious);
+  --color-serious-text: var(--serious-text);
+  --color-serious-soft: var(--serious-soft);
+  --color-critical: var(--critical);
+  --color-critical-text: var(--critical-text);
+  --color-critical-soft: var(--critical-soft);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+  dialog::backdrop {
+    background: rgba(11, 11, 11, 0.45);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .field-control {
+    width: 100%;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    padding: 0.5rem 0.75rem;
+    min-height: 2.5rem;
+    line-height: 1.4;
+  }
+  .field-control:focus {
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
+    border-color: transparent;
+  }
+  .field-control:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .field-control::placeholder {
+    color: var(--muted);
+    opacity: 0.8;
+  }
+  select.field-control {
+    appearance: none;
+    padding-right: 2rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+  }
+}
+
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
