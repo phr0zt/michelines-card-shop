@@ -7,6 +7,8 @@ import { migrate } from '../server/db/migrations';
 import { toCsv } from '../server/services/exports';
 import { bucketKey, bucketsBetween } from '../server/services/analytics';
 import { normalizeCategory, normalizeCondition, normalizeConfidence } from '../server/services/ai/identify';
+import { geminiJsonSchema, jsonFromText } from '../server/services/ai/gemini';
+import { effectiveAiModel } from '../shared/constants';
 
 const card = {
   category: 'Hockey',
@@ -172,5 +174,38 @@ describe('AI answer normalisation', () => {
     expect(normalizeCondition('Unknown')).toBeNull();
     expect(normalizeConfidence('High')).toBe('high');
     expect(normalizeConfidence('fairly sure')).toBe('medium');
+  });
+});
+
+describe('AI providers', () => {
+  it('falls back to whichever provider has a key', () => {
+    expect(effectiveAiModel('claude-opus-5', { claude: true, gemini: true })).toBe('claude-opus-5');
+    expect(effectiveAiModel('claude-opus-5', { claude: false, gemini: true })).toBe('gemini-3.8-flash');
+    expect(effectiveAiModel('gemini-3.5-flash-lite', { claude: true, gemini: true })).toBe('gemini-3.5-flash-lite');
+    expect(effectiveAiModel('gemini-3.5-flash-lite', { claude: true, gemini: false })).toBe('claude-opus-5');
+    expect(effectiveAiModel('gemini-3.5-flash-lite', { claude: false, gemini: false })).toBeNull();
+  });
+
+  it('keeps only the JSON Schema Gemini understands', () => {
+    const schema = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: { type: { type: 'string', pattern: '^x', description: 'a field called "type"' }, n: { anyOf: [{ type: 'number' }, { type: 'null' }] } },
+      required: ['type', 'n'],
+      additionalProperties: false,
+    };
+    expect(geminiJsonSchema(schema)).toEqual({
+      type: 'object',
+      properties: { type: { type: 'string', description: 'a field called "type"' }, n: { anyOf: [{ type: 'number' }, { type: 'null' }] } },
+      required: ['type', 'n'],
+      additionalProperties: false,
+    });
+  });
+
+  it('reads JSON from a reply with or without a code fence', () => {
+    expect(jsonFromText('{"a":1}')).toEqual({ a: 1 });
+    expect(jsonFromText('Sure!\n```json\n{"a":2}\n```\nDone.')).toEqual({ a: 2 });
+    expect(jsonFromText('no json here')).toBeUndefined();
+    expect(jsonFromText(undefined)).toBeUndefined();
   });
 });

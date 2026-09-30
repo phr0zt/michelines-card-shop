@@ -139,8 +139,8 @@ export default function AddCardsPage() {
       />
       {ai && !ai.configured && (
         <Alert tone="info" className="mb-5" title="AI is turned off">
-          Cards are still saved with their photos — you’ll fill in the details yourself. Add <code className="text-xs">ANTHROPIC_API_KEY</code> on the
-          server to have the AI do it.
+          Cards are still saved with their photos — you’ll fill in the details yourself. Add <code className="text-xs">ANTHROPIC_API_KEY</code> or{' '}
+          <code className="text-xs">GEMINI_API_KEY</code> on the server to have the AI do it.
         </Alert>
       )}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">

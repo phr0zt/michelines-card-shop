@@ -56,8 +56,8 @@ export function AiPanel({ card }: { card: CardDetail }) {
         <div className="mb-1 flex items-center gap-2 font-medium text-ink-2">
           <Sparkles className="size-4" /> AI is off
         </div>
-        Add an <code className="text-xs">ANTHROPIC_API_KEY</code> to the server to identify cards from photos and research prices
-        automatically.
+        Add an <code className="text-xs">ANTHROPIC_API_KEY</code> (Claude) or <code className="text-xs">GEMINI_API_KEY</code> (Gemini) to the
+        server to identify cards from photos and research prices automatically.
       </div>
     );
   }

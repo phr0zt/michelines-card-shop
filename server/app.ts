@@ -13,7 +13,7 @@ import { exportRoutes } from './routes/exports';
 import { publicRoutes } from './routes/public';
 import { recordRoutes } from './routes/records';
 import { settingsRoutes } from './routes/settings';
-import { createAiClient, type AiClient } from './services/ai/client';
+import { createAiClient, createGeminiClient, type AiClient, type GeminiClient } from './services/ai/client';
 import { JobRunner } from './services/ai/jobs';
 import { ImageStore } from './services/images';
 import { getSettings } from './services/settings';
@@ -24,8 +24,10 @@ export interface AppOptions {
   sessionSecret?: string;
   /** Built web app (dist/web). When missing, only the API is served (Vite serves the UI in dev). */
   webDir?: string | null;
-  /** Override the Anthropic client (tests pass a fake; null disables AI). */
+  /** Override the Anthropic client (tests pass a fake; null turns Claude off). */
   aiClient?: AiClient | null;
+  /** Override the Gemini client. When a test passes aiClient without this, Gemini stays off. */
+  geminiClient?: GeminiClient | null;
   aiConcurrency?: number;
   /** Shown to the owner in the admin when data isn't on persistent storage. */
   storageWarning?: string | null;
@@ -68,8 +70,11 @@ export function createApp(opts: AppOptions) {
   const db = openDb(path.join(opts.dataDir, 'cards.db'));
   setTimeZone(getSettings(db).time_zone);
   const images = new ImageStore(path.join(opts.dataDir, 'uploads'));
-  const client = opts.aiClient === undefined ? createAiClient() : opts.aiClient;
-  const jobs = new JobRunner(db, images, client, opts.aiConcurrency ?? 2);
+  const clients = {
+    claude: opts.aiClient === undefined ? createAiClient() : opts.aiClient,
+    gemini: opts.geminiClient !== undefined ? opts.geminiClient : opts.aiClient === undefined ? createGeminiClient() : null,
+  };
+  const jobs = new JobRunner(db, images, clients, opts.aiConcurrency ?? 2);
   const auth = createAuth({
     password: opts.adminPassword,
     secret: opts.sessionSecret || loadOrCreateSecret(opts.dataDir),

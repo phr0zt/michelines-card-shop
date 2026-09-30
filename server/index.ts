@@ -46,7 +46,7 @@ if (!adminPassword) {
   console.warn('⚠ ADMIN_PASSWORD is not set — nobody can log in to /admin until you set it.');
 }
 if (!ctx.jobs.configured) {
-  console.warn('ℹ ANTHROPIC_API_KEY is not set — AI card identification and price research are turned off.');
+  console.warn('ℹ No AI key is set (ANTHROPIC_API_KEY or GEMINI_API_KEY) — AI card identification and price research are turned off.');
 }
 
 ctx.jobs.start();

@@ -36,7 +36,7 @@ Needs [Node.js 22](https://nodejs.org) or newer.
 
 ```bash
 npm install
-cp .env.example .env        # then edit .env: set ADMIN_PASSWORD and ANTHROPIC_API_KEY
+cp .env.example .env        # then edit .env: set ADMIN_PASSWORD and ANTHROPIC_API_KEY or GEMINI_API_KEY
 npm run dev                 # server on :3001, app on http://localhost:5173
 ```
 
@@ -57,7 +57,7 @@ The repo includes a `Dockerfile`, so any host that runs Docker works. On [Railwa
 2. **Add a volume** to the service with mount path **`/data`**. This is where the database and photos are stored. Without a volume, everything is lost when the app redeploys.
 3. **Variables:**
    - `ADMIN_PASSWORD` — a strong password for `/admin` (required)
-   - `ANTHROPIC_API_KEY` — from <https://console.anthropic.com> (needed for the AI features)
+   - `ANTHROPIC_API_KEY` from <https://console.anthropic.com> or `GEMINI_API_KEY` from <https://aistudio.google.com> (either one turns on the AI features)
 4. **Settings → Networking → Generate domain** (or add your own domain).
 5. Optional: set the health check path to `/api/health`.
 
@@ -70,7 +70,8 @@ Other hosts: build the image (`docker build -t card-shop .`), run it with a pers
 | Variable | Required | What it does |
 |---|---|---|
 | `ADMIN_PASSWORD` | yes | Password for the admin area. Changing it signs everyone out. |
-| `ANTHROPIC_API_KEY` | for AI | Turns on card identification and price research. |
+| `ANTHROPIC_API_KEY` | for AI | Turns on card identification and price research with Claude. |
+| `GEMINI_API_KEY` | for AI | Turns on card identification and price research with Google Gemini (a Google AI Studio key). Used automatically when it's the only AI key. |
 | `DATA_DIR` | no | Where the database and photos live. Default: the attached Railway volume if there is one, otherwise `/data` in Docker or `./data` locally. |
 | `PORT` | no | HTTP port (default 3001). |
 | `SESSION_SECRET` | no | Signs login cookies. Generated and saved in `DATA_DIR` if not set. |
@@ -80,11 +81,13 @@ Other hosts: build the image (`docker build -t card-shop .`), run it with a pers
 
 ## About the AI
 
-- **Model:** Claude Opus 5 by default (most accurate at reading small print, parallels and serial numbers). Claude Sonnet 5 is a cheaper option in **Settings → AI assistant**. You can also turn automatic price research off to save money on bulk commons and research individual cards with one click later.
-- **Cost:** you pay Anthropic directly for usage. Very roughly, identifying a card costs around 10¢ and researching its value 20–40¢ with Opus 5 (web searches are about 1¢ each, and search results make up most of the cost). **Settings** shows your estimated AI spend for the month.
-- **Web search** must be enabled for your Anthropic organization (Claude Console → settings) for price research to work.
+- **Claude or Gemini:** set `ANTHROPIC_API_KEY` for Claude or `GEMINI_API_KEY` for Google Gemini; either turns the AI on. With only a Gemini key, Gemini 3.8 Flash is used automatically. With both, pick the model in **Settings → AI assistant**.
+- **Model:** Claude Opus 5 is the default and the most accurate at reading small print, parallels and serial numbers. Claude Sonnet 5, Gemini 3.8 Flash and Gemini 3.5 Flash-Lite are cheaper options. You can also turn automatic price research off to save money on bulk commons and research individual cards with one click later.
+- **Cost with Claude:** you pay Anthropic directly. Very roughly, identifying a card costs around 10¢ and researching its value 20–40¢ with Opus 5 (web searches are about 1¢ each, and search results make up most of the cost). Web search must be enabled for your Anthropic organization (Claude Console → settings) for price research to work.
+- **Cost with Gemini:** an AI Studio free-tier key costs nothing but has daily rate limits, and Google may use free-tier requests to improve its products. On the paid tier, Gemini 3.8 Flash is a fraction of a cent to a few cents per card, and the first 5,000 Google searches a month are free. Price research uses Grounding with Google Search, and Gemini decides how many searches to run.
+- **Settings** shows your estimated AI spend for the month (Gemini is estimated at paid rates).
 - **Market values are estimates.** Beckett, Card Ladder and similar services don't offer a public API, so the research uses what is publicly searchable (mostly eBay sold data). Every estimate shows its comparable sales and links, and you can add your own price checks.
-- Photos are sent to Anthropic's API for analysis. Nothing is shared publicly unless you show a card on your shop.
+- Photos are sent to Anthropic's or Google's API for analysis. Nothing is shared publicly unless you show a card on your shop.
 - AI work runs in the background from a queue, two cards at a time, so you can keep working or close the page. Failed jobs can be retried from the **Review** page.
 
 ## Data, backups and privacy

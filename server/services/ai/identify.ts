@@ -46,7 +46,7 @@ export const IdentificationSchema = z.object({
 
 export type Identification = z.infer<typeof IdentificationSchema>;
 
-const SYSTEM = `You identify sports and trading cards from photos for a small card shop's inventory. You know card sets across hockey (O-Pee-Chee, Topps, Upper Deck, Parkhurst, Pro Set, Score, Pinnacle, Fleer, Bowman and more), baseball, basketball, football, soccer, and trading card games such as Pokémon, Magic: The Gathering and Yu-Gi-Oh!.
+export const IDENTIFY_SYSTEM = `You identify sports and trading cards from photos for a small card shop's inventory. You know card sets across hockey (O-Pee-Chee, Topps, Upper Deck, Parkhurst, Pro Set, Score, Pinnacle, Fleer, Bowman and more), baseball, basketball, football, soccer, and trading card games such as Pokémon, Magic: The Gathering and Yu-Gi-Oh!.
 
 How to fill in the record:
 - Read what is printed: card number, copyright line, set logo, serial-number stamps like 045/199, and grading-slab labels. Use your knowledge of card designs to supply what isn't printed (such as the set and year a design belongs to), but never invent a serial number or certification number you cannot read.
@@ -67,7 +67,15 @@ export interface IdentifyOutcome {
 
 type ImagePart = Anthropic.Beta.Messages.BetaContentBlockParam;
 
-async function buildContent(db: Db, images: ImageStore, cardId: number, hint?: string): Promise<ImagePart[]> {
+export interface CardPhoto {
+  /** e.g. "Photo 1: the front of the card" */
+  label: string;
+  /** Base64 JPEG, resized for the AI. */
+  data: string;
+}
+
+/** The card's photos (front, back, extras; at most 4), labelled for the AI. */
+export async function loadCardPhotos(db: Db, images: ImageStore, cardId: number): Promise<CardPhoto[]> {
   const rows = db
     .prepare(
       `SELECT side, file_key FROM card_images WHERE card_id = ?
@@ -75,10 +83,9 @@ async function buildContent(db: Db, images: ImageStore, cardId: number, hint?: s
     )
     .all(cardId) as { side: string; file_key: string }[];
   if (rows.length === 0) throw new AiError('Add a photo of the card first.');
-
-  const content: ImagePart[] = [];
   const onlyOne = rows.length === 1;
-  rows.forEach((row, i) => {
+  const photos: CardPhoto[] = [];
+  for (const [i, row] of rows.entries()) {
     const label =
       row.side === 'front'
         ? onlyOne
@@ -87,20 +94,24 @@ async function buildContent(db: Db, images: ImageStore, cardId: number, hint?: s
         : row.side === 'back'
           ? 'the back of the card'
           : 'an extra photo of the card';
-    content.push({ type: 'text', text: `Photo ${i + 1}: ${label}` });
-    content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: '' } });
-  });
-  // Load image data after the layout is decided so errors surface before any big allocations.
-  let imgIndex = 0;
-  for (const block of content) {
-    if (block.type === 'image' && block.source.type === 'base64') {
-      block.source.data = await images.forAi(rows[imgIndex].file_key);
-      imgIndex++;
-    }
+    photos.push({ label: `Photo ${i + 1}: ${label}`, data: await images.forAi(row.file_key) });
   }
+  return photos;
+}
+
+export function identifyInstructions(hint?: string): string {
   const instructions = ['Identify this card and fill in the inventory record.'];
   if (hint) instructions.push(`The owner filed it under the category "${hint}".`);
-  content.push({ type: 'text', text: instructions.join(' ') });
+  return instructions.join(' ');
+}
+
+async function buildContent(db: Db, images: ImageStore, cardId: number, hint?: string): Promise<ImagePart[]> {
+  const content: ImagePart[] = [];
+  for (const photo of await loadCardPhotos(db, images, cardId)) {
+    content.push({ type: 'text', text: photo.label });
+    content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: photo.data } });
+  }
+  content.push({ type: 'text', text: identifyInstructions(hint) });
   return content;
 }
 
@@ -132,7 +143,7 @@ export async function runIdentification(
     max_tokens: 16000,
     thinking: { type: 'adaptive' },
     output_config: { effort, format },
-    system: SYSTEM,
+    system: IDENTIFY_SYSTEM,
     messages: [{ role: 'user', content }],
     ...fallbackParams(model),
   });

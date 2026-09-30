@@ -1,7 +1,17 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Database, Download, Plus, RotateCcw, Save, Sparkles, Trash2, XCircle } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
-import { AI_EFFORTS, AI_MODELS, PLATFORM_KINDS, PLATFORM_KIND_LABELS, type PlatformKind } from '@shared/constants';
+import {
+  AI_EFFORTS,
+  AI_MODELS,
+  AI_PROVIDER_KEYS,
+  AI_PROVIDER_LABELS,
+  AI_PROVIDERS,
+  aiProviderOf,
+  PLATFORM_KINDS,
+  PLATFORM_KIND_LABELS,
+  type PlatformKind,
+} from '@shared/constants';
 import type { Platform, Settings } from '@shared/types';
 import { Button, IconButton } from '../../components/ui/Button';
 import { useConfirm } from '../../components/ui/Dialog';
@@ -272,7 +282,10 @@ function AiSection({ settings }: { settings: Settings }) {
   const ai = useAiStatus();
   const toast = useToast();
   const qc = useQueryClient();
-  const models = AI_MODELS.some((m) => m.id === settings.ai_model) ? AI_MODELS : [...AI_MODELS, { id: settings.ai_model, label: settings.ai_model }];
+  const models = AI_MODELS.some((m) => m.id === settings.ai_model)
+    ? AI_MODELS
+    : [...AI_MODELS, { id: settings.ai_model, provider: aiProviderOf(settings.ai_model), label: settings.ai_model }];
+  const modelLabel = (id: string) => models.find((m) => m.id === id)?.label.replace(/ \(.*\)$/, '') ?? id;
 
   async function act(fn: () => Promise<unknown>, message: string) {
     try {
@@ -289,7 +302,7 @@ function AiSection({ settings }: { settings: Settings }) {
     <SettingsSection
       id="ai"
       title="AI assistant"
-      description="Identifies cards from photos and researches market value using Claude."
+      description="Identifies cards from photos and researches market value, using Claude (Anthropic) or Gemini (Google)."
       settings={settings}
       keys={['ai_model', 'ai_effort_identify', 'ai_effort_price', 'ai_auto_price', 'ai_max_searches']}
     >
@@ -297,17 +310,19 @@ function AiSection({ settings }: { settings: Settings }) {
         <div className="flex flex-col gap-4">
           {ai.data && !ai.data.configured ? (
             <Alert tone="warning" title="Not connected">
-              Add an Anthropic API key as <code className="text-xs">ANTHROPIC_API_KEY</code> in the server’s environment, then restart. Get a key
-              at console.anthropic.com. Price research also needs web search turned on for your Anthropic organization.
+              Add an API key in the server’s environment (on Railway: the service’s Variables), then restart: either{' '}
+              <code className="text-xs">ANTHROPIC_API_KEY</code> for Claude (from console.anthropic.com; price research also needs web search
+              turned on for your organization) or <code className="text-xs">GEMINI_API_KEY</code> for Gemini (from aistudio.google.com).
             </Alert>
           ) : ai.data ? (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl bg-surface-2 p-3 text-sm">
               <Badge tone="good" icon={<Sparkles className="size-3.5" />}>
-                Connected
+                Connected · {modelLabel(ai.data.model)}
               </Badge>
               <span className="text-ink-2">
                 This month: <strong className="text-ink">{ai.data.month_jobs}</strong> AI tasks, about{' '}
                 <strong className="text-ink">US${ai.data.month_cost_usd.toFixed(2)}</strong>
+                {aiProviderOf(ai.data.model) === 'gemini' && ' at paid rates (free with a free-tier Gemini key)'}
               </span>
               {(ai.data.queued > 0 || ai.data.running > 0) && (
                 <span className="text-ink-2">
@@ -329,12 +344,27 @@ function AiSection({ settings }: { settings: Settings }) {
             </div>
           ) : null}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Model" htmlFor="ai-model" hint="Opus is the most accurate at reading cards; Sonnet is faster and cheaper.">
+            <Field
+              label="Model"
+              htmlFor="ai-model"
+              hint={
+                ai.data?.configured && ai.data.model !== values.ai_model
+                  ? `No ${AI_PROVIDER_KEYS[aiProviderOf(values.ai_model)]} on the server, so ${modelLabel(ai.data.model)} is used instead.`
+                  : 'Claude Opus is the most accurate at reading cards; Sonnet and Gemini are faster and cheaper.'
+              }
+            >
               <Select id="ai-model" value={values.ai_model} onChange={(e) => set('ai_model', e.target.value)}>
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
+                {AI_PROVIDERS.map((provider) => (
+                  <optgroup key={provider} label={AI_PROVIDER_LABELS[provider]}>
+                    {models
+                      .filter((m) => m.provider === provider)
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                          {ai.data && !ai.data.providers[provider] ? ' — needs a key' : ''}
+                        </option>
+                      ))}
+                  </optgroup>
                 ))}
               </Select>
             </Field>
@@ -345,9 +375,9 @@ function AiSection({ settings }: { settings: Settings }) {
               max={15}
               value={values.ai_max_searches}
               onChange={(e) => set('ai_max_searches', Math.min(15, Math.max(1, Number(e.target.value) || 5)))}
-              hint="More searches can find better comps but cost a bit more (about 1¢ each)."
+              hint="Claude only: more searches can find better comps but cost a bit more (about 1¢ each). Gemini decides for itself; its first 5,000 searches a month are free."
             />
-            <Field label="Care when identifying" htmlFor="ai-eff-id" hint="Higher reads small print and variations more carefully.">
+            <Field label="Care when identifying" htmlFor="ai-eff-id" hint="Claude only. Higher reads small print and variations more carefully.">
               <Select id="ai-eff-id" value={values.ai_effort_identify} onChange={(e) => set('ai_effort_identify', e.target.value as Settings['ai_effort_identify'])}>
                 {AI_EFFORTS.map((e) => (
                   <option key={e} value={e}>
@@ -356,7 +386,7 @@ function AiSection({ settings }: { settings: Settings }) {
                 ))}
               </Select>
             </Field>
-            <Field label="Care when researching prices" htmlFor="ai-eff-price">
+            <Field label="Care when researching prices" htmlFor="ai-eff-price" hint="Claude only.">
               <Select id="ai-eff-price" value={values.ai_effort_price} onChange={(e) => set('ai_effort_price', e.target.value as Settings['ai_effort_price'])}>
                 {AI_EFFORTS.map((e) => (
                   <option key={e} value={e}>

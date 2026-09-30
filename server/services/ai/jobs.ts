@@ -1,4 +1,4 @@
-import type { AiJobKind } from '../../../shared/constants';
+import { aiProviderOf, effectiveAiModel, type AiJobKind } from '../../../shared/constants';
 import type { AiJob, AiStatus } from '../../../shared/types';
 import type { Db } from '../../db';
 import { badRequest } from '../../lib/http';
@@ -9,9 +9,10 @@ import type { ImageStore } from '../images';
 import { savePriceCheck } from '../priceChecks';
 import { jobFromRow } from '../serializers';
 import { getSettings } from '../settings';
-import type { AiClient } from './client';
+import { availableProviders, type AiClients } from './client';
 import { estimateCostUsd, type UsageTotals } from './costs';
 import { friendlyAiError } from './errors';
+import { runGeminiIdentification, runGeminiPricing } from './gemini';
 import { applyIdentification, runIdentification } from './identify';
 import { runPricing } from './pricing';
 
@@ -47,12 +48,12 @@ export class JobRunner {
   constructor(
     private readonly db: Db,
     private readonly images: ImageStore,
-    private readonly client: AiClient | null,
+    private readonly clients: AiClients,
     private readonly concurrency = 2,
   ) {}
 
   get configured(): boolean {
-    return this.client !== null;
+    return this.clients.claude !== null || this.clients.gemini !== null;
   }
 
   start(): void {
@@ -65,8 +66,10 @@ export class JobRunner {
   }
 
   enqueue(cardId: number, kind: AiJobKind, options: JobOptions = {}): AiJob {
-    if (!this.client) {
-      throw badRequest('AI is not set up yet. Add ANTHROPIC_API_KEY to the server environment to turn it on.');
+    if (!this.configured) {
+      throw badRequest(
+        'AI is not set up yet. Add ANTHROPIC_API_KEY (Claude) or GEMINI_API_KEY (Google Gemini) to the server environment to turn it on.',
+      );
     }
     getCardRow(this.db, cardId);
     const existing = this.db
@@ -110,7 +113,7 @@ export class JobRunner {
 
   private isIdle(): boolean {
     if (this.running > 0) return false;
-    if (!this.client) return true;
+    if (!this.configured) return true;
     const queued = this.db.prepare("SELECT COUNT(*) AS n FROM ai_jobs WHERE status = 'queued'").get() as { n: number };
     return queued.n === 0;
   }
@@ -126,7 +129,7 @@ export class JobRunner {
   }
 
   kick(): void {
-    if (this.stopped || !this.client) {
+    if (this.stopped || !this.configured) {
       this.notifyIdle();
       return;
     }
@@ -165,12 +168,19 @@ export class JobRunner {
       );
   }
 
+  /** The chosen model, or the other provider's default when only that one has a key. */
+  private model(chosen: string): string | null {
+    return effectiveAiModel(chosen, availableProviders(this.clients));
+  }
+
   private async run(job: JobRow): Promise<void> {
-    const client = this.client;
-    if (!client) return;
     const settings = getSettings(this.db);
     const options = JSON.parse(job.options_json || '{}') as JobOptions;
-    const model = settings.ai_model;
+    const model = this.model(settings.ai_model);
+    if (!model) return;
+    // The model is always one whose provider has a client, so `claude!` below is set whenever gemini isn't.
+    const { claude } = this.clients;
+    const gemini = aiProviderOf(model) === 'gemini' ? this.clients.gemini : null;
     try {
       // The card may have been deleted while queued.
       if (!this.db.prepare('SELECT 1 FROM cards WHERE id = ?').get(job.card_id)) {
@@ -178,9 +188,11 @@ export class JobRunner {
         return;
       }
       if (job.kind === 'identify') {
-        const out = await runIdentification(client, this.db, this.images, job.card_id, model, settings.ai_effort_identify, {
-          categoryHint: options.categoryHint,
-        });
+        const out = gemini
+          ? await runGeminiIdentification(gemini, this.db, this.images, job.card_id, model, { categoryHint: options.categoryHint })
+          : await runIdentification(claude!, this.db, this.images, job.card_id, model, settings.ai_effort_identify, {
+              categoryHint: options.categoryHint,
+            });
         if (this.db.prepare('SELECT 1 FROM cards WHERE id = ?').get(job.card_id)) {
           applyIdentification(this.db, job.card_id, out.identification, options.overwrite);
         }
@@ -190,7 +202,9 @@ export class JobRunner {
           this.enqueue(job.card_id, 'price');
         }
       } else {
-        const out = await runPricing(client, this.db, job.card_id, settings, model, settings.ai_effort_price);
+        const out = gemini
+          ? await runGeminiPricing(gemini, this.db, job.card_id, settings, model)
+          : await runPricing(claude!, this.db, job.card_id, settings, model, settings.ai_effort_price);
         if (this.db.prepare('SELECT 1 FROM cards WHERE id = ?').get(job.card_id)) {
           savePriceCheck(this.db, job.card_id, out.result);
         }
@@ -225,7 +239,8 @@ export class JobRunner {
       .get(monthStart.toISOString()) as { n: number; cost: number };
     return {
       configured: this.configured,
-      model: settings.ai_model,
+      model: this.model(settings.ai_model) ?? settings.ai_model,
+      providers: availableProviders(this.clients),
       queued: counts.queued ?? 0,
       running: counts.running ?? 0,
       failed_recent: counts.failed ?? 0,

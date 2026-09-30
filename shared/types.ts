@@ -2,6 +2,7 @@ import type {
   AiEffort,
   AiJobKind,
   AiJobStatus,
+  AiProvider,
   CardStatus,
   CostAllocationMethod,
   FulfillmentStatus,
@@ -320,7 +321,10 @@ export interface Settings {
 
 export interface AiStatus {
   configured: boolean;
+  /** The model AI tasks run on: the chosen one, or a fallback when only the other provider has a key. */
   model: string;
+  /** Which providers have an API key on the server. */
+  providers: Record<AiProvider, boolean>;
   queued: number;
   running: number;
   failed_recent: number;

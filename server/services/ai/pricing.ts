@@ -80,7 +80,7 @@ const REPORT_TOOL = {
   },
 };
 
-const ReportSchema = z.object({
+export const ReportSchema = z.object({
   found_data: z.boolean(),
   currency: z.string(),
   low: z.number().nullable(),
@@ -105,7 +105,8 @@ const ReportSchema = z.object({
   ),
 });
 
-function systemPrompt(settings: Settings): string {
+/** `finish` says how to hand back the report (a tool call for Claude, a JSON reply for Gemini). */
+export function pricingSystemPrompt(settings: Settings, finish: string): string {
   const cur = settings.currency;
   const conversion =
     cur === 'USD'
@@ -118,10 +119,10 @@ function systemPrompt(settings: Settings): string {
 - Report low / typical / high, suggested_list_price and quick_sale_price in ${cur}.${conversion}
 - If the exact card has no data, use the closest comparable cards, say so in the summary, and use low confidence. If there's really nothing to go on, set found_data to false and leave the prices null.
 - Common cards worth under a dollar or two are normal; just say so.
-- Finish by calling report_market_value once, with up to 8 of the most relevant comps and their URLs.`;
+- ${finish}`;
 }
 
-function describeCard(db: Db, cardId: number): { label: string; text: string } {
+export function describeCard(db: Db, cardId: number): { label: string; text: string } {
   const card = getCard(db, cardId);
   const label = cardLabel(card);
   if (label === 'Unidentified card' && !card.title) {
@@ -173,7 +174,7 @@ function currencyCode(value: string, fallback: string): string {
   return /^[A-Z]{3}$/.test(code) ? code : fallback;
 }
 
-function safeUrl(u: string): string {
+export function safeUrl(u: string): string {
   try {
     const url = new URL(u);
     return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : '';
@@ -211,7 +212,10 @@ export async function runPricing(
       max_tokens: 16000,
       thinking: { type: 'adaptive' },
       output_config: { effort },
-      system: systemPrompt(settings),
+      system: pricingSystemPrompt(
+        settings,
+        'Finish by calling report_market_value once, with up to 8 of the most relevant comps and their URLs.',
+      ),
       tools: [
         { type: 'web_search_20260209', name: 'web_search', max_uses: settings.ai_max_searches },
         REPORT_TOOL,
@@ -246,7 +250,7 @@ export async function runPricing(
   throw new AiError('The AI finished without reporting a price. Please retry.');
 }
 
-function toPriceResult(
+export function toPriceResult(
   r: z.infer<typeof ReportSchema>,
   sources: Map<string, PriceSource>,
   settings: Settings,

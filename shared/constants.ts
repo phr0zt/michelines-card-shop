@@ -109,10 +109,36 @@ export type AiJobStatus = (typeof AI_JOB_STATUSES)[number];
 export const AI_EFFORTS = ['low', 'medium', 'high'] as const;
 export type AiEffort = (typeof AI_EFFORTS)[number];
 
-export const AI_MODELS = [
-  { id: 'claude-opus-5', label: 'Claude Opus 5 (most accurate, default)' },
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (faster, about 60% cheaper)' },
-] as const;
+export const AI_PROVIDERS = ['claude', 'gemini'] as const;
+export type AiProvider = (typeof AI_PROVIDERS)[number];
+export const AI_PROVIDER_LABELS: Record<AiProvider, string> = { claude: 'Claude (Anthropic)', gemini: 'Gemini (Google)' };
+export const AI_PROVIDER_KEYS: Record<AiProvider, string> = { claude: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY' };
+
+export const AI_MODELS: readonly { id: string; provider: AiProvider; label: string }[] = [
+  { id: 'claude-opus-5', provider: 'claude', label: 'Claude Opus 5 (most accurate, default)' },
+  { id: 'claude-sonnet-5', provider: 'claude', label: 'Claude Sonnet 5 (faster, about 60% cheaper)' },
+  { id: 'gemini-3.8-flash', provider: 'gemini', label: 'Gemini 3.8 Flash' },
+  { id: 'gemini-3.5-flash-lite', provider: 'gemini', label: 'Gemini 3.5 Flash-Lite (cheapest)' },
+];
+
+/** Which company's API a model id belongs to. */
+export function aiProviderOf(model: string): AiProvider {
+  return /^gemini/i.test(model.trim()) ? 'gemini' : 'claude';
+}
+
+/** The model a provider falls back to when the chosen model's provider has no key. */
+export const DEFAULT_AI_MODELS: Record<AiProvider, string> = { claude: 'claude-opus-5', gemini: 'gemini-3.8-flash' };
+
+/**
+ * The model AI tasks actually run on: the chosen one when its provider has a
+ * key, otherwise the default model of a provider that does (so adding just a
+ * Gemini key works without touching Settings). Null when no key is set.
+ */
+export function effectiveAiModel(chosen: string, available: Record<AiProvider, boolean>): string | null {
+  if (available[aiProviderOf(chosen)]) return chosen;
+  const other = AI_PROVIDERS.find((p) => available[p]);
+  return other ? DEFAULT_AI_MODELS[other] : null;
+}
 
 export const PRICE_CONFIDENCE = ['low', 'medium', 'high'] as const;
 export type PriceConfidence = (typeof PRICE_CONFIDENCE)[number];

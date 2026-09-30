@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AiClient } from '../server/services/ai/client';
+import { ApiError, type GenerateContentConfig, type GenerateContentParameters, type Part } from '@google/genai';
+import type { AiClient, GeminiClient } from '../server/services/ai/client';
 import { makeJpeg, makeTestApp, PASSWORD } from './helpers';
 import request from 'supertest';
 
@@ -429,6 +430,35 @@ describe('analytics and exports', () => {
   });
 });
 
+const MCDAVID = {
+  is_trading_card: true,
+  category: 'Hockey',
+  player: 'Connor McDavid',
+  team: 'Edmonton Oilers',
+  year: '2015-16',
+  brand: 'Upper Deck',
+  set_name: 'Upper Deck Series 1',
+  subset: 'Young Guns',
+  card_number: '#201',
+  parallel: '',
+  serial_number: '',
+  is_rookie: true,
+  is_autograph: false,
+  is_memorabilia: false,
+  is_graded: false,
+  grading_company: '',
+  grade: '',
+  cert_number: '',
+  condition: 'Near Mint',
+  condition_notes: 'Slightly off-centre left to right.',
+  title: '2015-16 Upper Deck Young Guns Connor McDavid #201 RC',
+  description: 'Rookie card of Connor McDavid.',
+  search_query: '2015-16 Upper Deck Young Guns McDavid 201',
+  notable: 'Key modern rookie card',
+  uncertainties: '',
+  confidence: 'high',
+};
+
 describe('AI jobs', () => {
   function fakeClient() {
     const calls = { parse: 0, create: 0 };
@@ -442,34 +472,7 @@ describe('AI jobs', () => {
               stop_reason: 'end_turn',
               content: [],
               usage: { input_tokens: 5000, output_tokens: 800, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
-              parsed_output: {
-                is_trading_card: true,
-                category: 'Hockey',
-                player: 'Connor McDavid',
-                team: 'Edmonton Oilers',
-                year: '2015-16',
-                brand: 'Upper Deck',
-                set_name: 'Upper Deck Series 1',
-                subset: 'Young Guns',
-                card_number: '#201',
-                parallel: '',
-                serial_number: '',
-                is_rookie: true,
-                is_autograph: false,
-                is_memorabilia: false,
-                is_graded: false,
-                grading_company: '',
-                grade: '',
-                cert_number: '',
-                condition: 'Near Mint',
-                condition_notes: 'Slightly off-centre left to right.',
-                title: '2015-16 Upper Deck Young Guns Connor McDavid #201 RC',
-                description: 'Rookie card of Connor McDavid.',
-                search_query: '2015-16 Upper Deck Young Guns McDavid 201',
-                notable: 'Key modern rookie card',
-                uncertainties: '',
-                confidence: 'high',
-              },
+              parsed_output: MCDAVID,
             };
           },
           create: async () => {
@@ -628,10 +631,156 @@ describe('AI jobs', () => {
     expect(calls).toBe(4);
   });
 
+  function fakeGemini(opts: { rejectSchemaWithTools?: boolean; error?: ApiError } = {}) {
+    const calls: GenerateContentParameters[] = [];
+    const report = {
+      found_data: true,
+      currency: 'CAD',
+      low: 250,
+      typical: 320,
+      high: 400,
+      suggested_list_price: 349.99,
+      quick_sale_price: 275,
+      confidence: 'Medium',
+      summary: 'Raw copies sell for about US$230.',
+      advice: 'Consider grading.',
+      comps: [{ title: 'McDavid YG raw', price: 230, currency: 'US$', date: '2026-08-01', venue: 'eBay', url: 'https://www.ebay.com/itm/2', grade: 'Raw', sold: true }],
+    };
+    const client = {
+      models: {
+        generateContent: async (params: GenerateContentParameters) => {
+          calls.push(params);
+          if (opts.error) throw opts.error;
+          const config = params.config as GenerateContentConfig;
+          if (!config.tools) {
+            return {
+              text: JSON.stringify(MCDAVID),
+              candidates: [{ finishReason: 'STOP' }],
+              usageMetadata: { promptTokenCount: 2000, candidatesTokenCount: 500, thoughtsTokenCount: 300 },
+              modelVersion: params.model,
+            };
+          }
+          if (opts.rejectSchemaWithTools && config.responseJsonSchema) {
+            const body = { error: { code: 400, message: 'Tool use with a response schema is unsupported', status: 'INVALID_ARGUMENT' } };
+            throw new ApiError({ message: JSON.stringify(body), status: 400 });
+          }
+          return {
+            text: config.responseJsonSchema ? JSON.stringify(report) : `Here is the report:\n\`\`\`json\n${JSON.stringify(report)}\n\`\`\``,
+            candidates: [
+              {
+                finishReason: 'STOP',
+                groundingMetadata: {
+                  webSearchQueries: ['mcdavid young guns 201 sold'],
+                  groundingChunks: [
+                    { web: { uri: 'https://www.ebay.com/itm/2', title: 'ebay.com' } },
+                    { web: { uri: 'javascript:alert(1)', title: 'bad' } },
+                  ],
+                },
+              },
+            ],
+            usageMetadata: { promptTokenCount: 3000, candidatesTokenCount: 900, toolUsePromptTokenCount: 4000 },
+            modelVersion: params.model,
+          };
+        },
+      },
+    };
+    return { client: client as unknown as GeminiClient, calls };
+  }
+
+  async function geminiSetup(gemini: GeminiClient, claude: AiClient | null = null) {
+    t = makeTestApp(claude, { geminiClient: gemini });
+    return { app: t, agent: await t.login() };
+  }
+
+  it('identifies and prices with Gemini when only a Gemini key is set', async () => {
+    const { client, calls } = fakeGemini();
+    const { agent, app } = await geminiSetup(client);
+    const res = await agent
+      .post('/api/cards')
+      .field('data', JSON.stringify({}))
+      .field('identify', '1')
+      .attach('front', await makeJpeg(), 'f.jpg')
+      .attach('back', await makeJpeg('#222222'), 'b.jpg')
+      .expect(201);
+    await app.ctx.jobs.whenIdle();
+
+    // Settings still say claude-opus-5, but with only a Gemini key the Gemini default is used.
+    expect(calls.map((c) => c.model)).toEqual(['gemini-3.8-flash', 'gemini-3.8-flash']);
+    const [identify, price] = calls;
+    const parts = (identify.contents as { parts: Part[] }[])[0].parts;
+    expect(parts.filter((p) => p.inlineData?.mimeType === 'image/jpeg')).toHaveLength(2);
+    expect(identify.config?.responseMimeType).toBe('application/json');
+    expect(JSON.stringify(identify.config?.responseJsonSchema)).toContain('"card_number"');
+    expect(JSON.stringify(identify.config?.responseJsonSchema)).not.toContain('$schema');
+    expect(price.config?.tools).toEqual([{ googleSearch: {} }]);
+    expect(price.config?.responseJsonSchema).toBeTruthy();
+
+    const card = (await agent.get(`/api/cards/${res.body.id}`).expect(200)).body;
+    expect(card.player).toBe('Connor McDavid');
+    expect(card.card_number).toBe('201');
+    expect(card.market_value_cents).toBe(32000);
+    expect(card.asking_price_cents).toBe(34999);
+    const check = card.price_checks[0];
+    expect(check.model).toBe('gemini-3.8-flash');
+    expect(check.confidence).toBe('medium');
+    expect(check.comps[0].currency).toBe('USD');
+    expect(check.sources).toEqual([{ title: 'ebay.com', url: 'https://www.ebay.com/itm/2' }]);
+
+    const status = (await agent.get('/api/ai/status').expect(200)).body;
+    expect(status).toMatchObject({ configured: true, model: 'gemini-3.8-flash', providers: { claude: false, gemini: true }, month_jobs: 2 });
+  });
+
+  it('asks Gemini for JSON in the reply when it won’t combine search with a schema', async () => {
+    const { client, calls } = fakeGemini({ rejectSchemaWithTools: true });
+    const { agent, app } = await geminiSetup(client);
+    const card = await createCard(agent, { status: 'in_stock', player: 'Connor McDavid', year: '2015-16' }, false);
+    await agent.post(`/api/cards/${card.id}/research`).expect(202);
+    await app.ctx.jobs.whenIdle();
+    expect(calls).toHaveLength(2);
+    expect(calls[1].config?.responseJsonSchema).toBeUndefined();
+    expect(calls[1].config?.tools).toEqual([{ googleSearch: {} }]);
+    const after = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
+    expect(after.market_value_cents).toBe(32000);
+    expect(after.jobs[0].status).toBe('done');
+  });
+
+  it('uses the provider of the chosen model when both keys are set', async () => {
+    const claude = fakeClient();
+    const gemini = fakeGemini();
+    const { agent, app } = await geminiSetup(gemini.client, claude.client);
+    await agent.patch('/api/settings').send({ ai_model: 'gemini-3.5-flash-lite' }).expect(200);
+    const card = await createCard(agent);
+    await agent.post(`/api/cards/${card.id}/identify`).send({ then_price: false }).expect(202);
+    await app.ctx.jobs.whenIdle();
+    expect(gemini.calls.map((c) => c.model)).toEqual(['gemini-3.5-flash-lite']);
+    expect(claude.calls.parse).toBe(0);
+
+    await agent.patch('/api/settings').send({ ai_model: 'claude-opus-5' }).expect(200);
+    await agent.post(`/api/cards/${card.id}/identify`).send({ then_price: false }).expect(202);
+    await app.ctx.jobs.whenIdle();
+    expect(claude.calls.parse).toBe(1);
+    expect(gemini.calls).toHaveLength(1);
+  });
+
+  it('explains a rejected Gemini key', async () => {
+    const body = { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' } };
+    const { client, calls } = fakeGemini({ error: new ApiError({ message: JSON.stringify(body), status: 400 }) });
+    const { agent, app } = await geminiSetup(client);
+    const card = await createCard(agent);
+    await agent.post(`/api/cards/${card.id}/research`).expect(202);
+    await app.ctx.jobs.whenIdle();
+    expect(calls).toHaveLength(1);
+    const after = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
+    expect(after.jobs[0].error).toBe('The Gemini API key was rejected. Check GEMINI_API_KEY on the server.');
+  });
+
   it('explains when AI is not configured', async () => {
     const { agent } = await setup(null);
     const card = await createCard(agent);
     const res = await agent.post(`/api/cards/${card.id}/identify`).send({}).expect(400);
     expect(res.body.error).toMatch(/ANTHROPIC_API_KEY/);
+    expect(res.body.error).toMatch(/GEMINI_API_KEY/);
+    const status = (await agent.get('/api/ai/status').expect(200)).body;
+    expect(status).toMatchObject({ configured: false, providers: { claude: false, gemini: false } });
   });
 });
