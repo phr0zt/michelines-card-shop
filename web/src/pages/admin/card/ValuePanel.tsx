@@ -148,13 +148,19 @@ export function ValuePanel({ card, researching }: { card: CardDetail; researchin
       {latestAi && (
         <div className="mt-6 flex flex-col gap-3 border-t border-line pt-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">Latest AI research</h3>
+            <h3 className="text-sm font-semibold">{latestAi.estimate ? 'Latest AI estimate' : 'Latest AI research'}</h3>
             <span className="text-xs text-muted">
               {fmt.dateTime(latestAi.created_at)}
               {latestAi.suggested_price_cents !== null && ` · suggested list price ${fmt.money(latestAi.suggested_price_cents)}`}
               {latestAi.quick_sale_cents !== null && ` · quick sale ${fmt.money(latestAi.quick_sale_cents)}`}
             </span>
           </div>
+          {latestAi.estimate && (
+            <Alert tone="warning" title="Not based on recent sales">
+              The AI couldn’t search the web (Gemini’s free tier has no Google Search), so this is its guess from what it already knows,
+              and it may be out of date. It didn’t set your asking price. Check recent sales with the price links on this card before pricing it.
+            </Alert>
+          )}
           {latestAi.summary && <p className="text-sm text-ink-2">{latestAi.summary}</p>}
           {latestAi.advice && (
             <p className="rounded-lg bg-primary-soft p-3 text-sm text-ink">

@@ -235,6 +235,13 @@ CREATE TABLE value_snapshots (
       for (const row of rows) update.run(buildPublicSearchText(row), row.id);
     },
   },
+  {
+    // AI jobs that hit a rate limit wait in the queue until this time (ISO), then run again.
+    // An "estimate" price check is the AI's guess without searching recent sales.
+    version: 3,
+    sql: `ALTER TABLE ai_jobs ADD COLUMN run_after TEXT;
+ALTER TABLE price_checks ADD COLUMN estimate INTEGER NOT NULL DEFAULT 0;`,
+  },
 ];
 
 export function migrate(db: Database.Database): void {

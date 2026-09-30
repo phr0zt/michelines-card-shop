@@ -26,7 +26,12 @@ export function createAiClient(): AiClient | null {
 export function createGeminiClient(): GeminiClient | null {
   const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
   if (!apiKey) return null;
-  return new GoogleGenAI({ apiKey, httpOptions: { timeout: 10 * 60 * 1000, retryOptions: { attempts: 4 } } });
+  // Quick SDK retries only for passing server errors: rate limits and "too busy" (429/503) are waited out
+  // by the job queue using the delay Google asks for, since fast retries just use up the per-minute quota.
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: { timeout: 10 * 60 * 1000, retryOptions: { attempts: 3, httpStatusCodes: [500, 502, 504] } },
+  });
 }
 
 export function availableProviders(clients: AiClients): Record<AiProvider, boolean> {

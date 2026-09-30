@@ -280,6 +280,7 @@ export default function SettingsPage() {
 
 function AiSection({ settings }: { settings: Settings }) {
   const ai = useAiStatus();
+  const fmt = useFormat();
   const toast = useToast();
   const qc = useQueryClient();
   const models = AI_MODELS.some((m) => m.id === settings.ai_model)
@@ -327,6 +328,7 @@ function AiSection({ settings }: { settings: Settings }) {
               {(ai.data.queued > 0 || ai.data.running > 0) && (
                 <span className="text-ink-2">
                   {ai.data.running} running · {ai.data.queued} waiting
+                  {ai.data.paused_until && ` · paused for the provider’s rate limit until ${fmt.time(ai.data.paused_until)}`}
                 </span>
               )}
               <span className="ml-auto flex gap-2">

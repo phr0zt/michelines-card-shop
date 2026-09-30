@@ -240,6 +240,8 @@ export interface PriceCheck {
   comps: PriceComp[];
   sources: PriceSource[];
   model: string;
+  /** The AI's guess without searching recent sales (e.g. Gemini free tier, which has no Google Search). */
+  estimate: boolean;
   created_at: string;
 }
 
@@ -256,7 +258,10 @@ export interface AiJob {
   card_id: number;
   kind: AiJobKind;
   status: AiJobStatus;
+  /** For a failed job, what went wrong; for a job waiting out a rate limit, why it's waiting. */
   error: string | null;
+  /** Set while a job waits out a rate limit: when it will try again. */
+  retry_at: string | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -325,6 +330,8 @@ export interface AiStatus {
   model: string;
   /** Which providers have an API key on the server. */
   providers: Record<AiProvider, boolean>;
+  /** Set while the queue is paused for a rate limit: when it starts again. */
+  paused_until: string | null;
   queued: number;
   running: number;
   failed_recent: number;

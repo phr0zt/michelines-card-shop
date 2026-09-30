@@ -27,7 +27,8 @@ Trading-card inventory + cross-listing tracker + public shop. See README.md for 
 ## AI (server/services/ai/)
 
 - Two providers, picked by the model setting (`aiProviderOf` in `shared/constants.ts`): Claude via `@anthropic-ai/sdk` (beta Messages API; default `claude-opus-5`) and Google Gemini via `@google/genai` (`gemini.ts`). If the chosen model's provider has no key, `effectiveAiModel` falls back to the other provider's default.
-- Gemini uses the same prompts and zod schemas: `responseJsonSchema` for identification, Grounding with Google Search for prices. If a model rejects a schema combined with search, it retries asking for JSON in the reply.
+- Gemini uses the same prompts and zod schemas: `responseJsonSchema` for identification, Grounding with Google Search for prices. If a model rejects a schema combined with search, it retries asking for JSON in the reply. Free-tier keys can't search (a bare 429): pricing then falls back to an estimate (`price_checks.estimate`, low confidence, no comps, never fills asking/floor prices).
+- Rate limits and overloads (`retryWait` in `errors.ts`) put the job back in the queue with `ai_jobs.run_after` and pause the runner for the wait the provider asks for; other errors fail the job. The Gemini SDK itself only retries 500/502/504.
 - Identification: `messages.parse` with a zod structured-output schema; photos resized to ≤2000px.
 - Price research: `web_search_20260209` server tool + a strict `report_market_value` custom tool; handles `pause_turn`, refusals, and a nudge if no report is made.
 - Opus 5 requests send `fallbacks: 'default'` with beta `server-side-fallback-2026-07-01` so safety-classifier refusals retry on a fallback model.

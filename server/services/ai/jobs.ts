@@ -11,7 +11,7 @@ import { jobFromRow } from '../serializers';
 import { getSettings } from '../settings';
 import { availableProviders, type AiClients } from './client';
 import { estimateCostUsd, type UsageTotals } from './costs';
-import { friendlyAiError } from './errors';
+import { friendlyAiError, retryWait } from './errors';
 import { runGeminiIdentification, runGeminiPricing } from './gemini';
 import { applyIdentification, runIdentification } from './identify';
 import { runPricing } from './pricing';
@@ -34,7 +34,11 @@ interface JobRow {
   kind: AiJobKind;
   status: string;
   options_json: string;
+  attempts: number;
 }
+
+/** A job that keeps hitting rate limits gives up after this many tries. */
+const MAX_ATTEMPTS = 8;
 
 /**
  * AI work runs in the background, a couple of jobs at a time, from a queue in
@@ -44,12 +48,18 @@ export class JobRunner {
   private running = 0;
   private idleWaiters: (() => void)[] = [];
   private stopped = false;
+  /** After a rate limit, no new job starts before this time (ms). */
+  private pausedUntil = 0;
+  private timer: NodeJS.Timeout | null = null;
+  private timerAt = 0;
 
   constructor(
     private readonly db: Db,
     private readonly images: ImageStore,
     private readonly clients: AiClients,
     private readonly concurrency = 2,
+    /** Tests shorten rate-limit waits to this many ms. */
+    private readonly retryDelayMs?: number,
   ) {}
 
   get configured(): boolean {
@@ -63,6 +73,8 @@ export class JobRunner {
 
   stop(): void {
     this.stopped = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
   }
 
   enqueue(cardId: number, kind: AiJobKind, options: JobOptions = {}): AiJob {
@@ -93,7 +105,7 @@ export class JobRunner {
     const n = this.db
       .prepare(
         `UPDATE ai_jobs SET status = 'queued', error = NULL, started_at = NULL, finished_at = NULL,
-           options_json = json_remove(options_json, '$.overwrite')
+           attempts = 0, run_after = NULL, options_json = json_remove(options_json, '$.overwrite')
          WHERE id IN (${OPEN_FAILED_JOBS})`,
       )
       .run().changes;
@@ -119,13 +131,14 @@ export class JobRunner {
   }
 
   private claim(): JobRow | undefined {
+    const now = nowIso();
     return this.db
       .prepare(
-        `UPDATE ai_jobs SET status = 'running', started_at = ?, attempts = attempts + 1
-         WHERE id = (SELECT id FROM ai_jobs WHERE status = 'queued' ORDER BY id LIMIT 1)
-         RETURNING id, card_id, kind, status, options_json`,
+        `UPDATE ai_jobs SET status = 'running', started_at = @now, attempts = attempts + 1
+         WHERE id = (SELECT id FROM ai_jobs WHERE status = 'queued' AND (run_after IS NULL OR run_after <= @now) ORDER BY id LIMIT 1)
+         RETURNING id, card_id, kind, status, options_json, attempts`,
       )
-      .get(nowIso()) as JobRow | undefined;
+      .get({ now }) as JobRow | undefined;
   }
 
   kick(): void {
@@ -133,16 +146,58 @@ export class JobRunner {
       this.notifyIdle();
       return;
     }
+    if (Date.now() < this.pausedUntil) {
+      this.wakeAt(this.pausedUntil);
+      return;
+    }
     while (this.running < this.concurrency) {
       const job = this.claim();
       if (!job) break;
       this.running++;
-      void this.run(job).finally(() => {
-        this.running--;
-        this.kick();
-      });
+      void this.run(job)
+        .catch((err: unknown) => {
+          // Only reachable if the database closed mid-job (shutdown); the job is re-queued on the next start.
+          if (!this.stopped) console.error(`AI job ${job.id} crashed:`, err);
+        })
+        .finally(() => {
+          this.running--;
+          this.kick();
+        });
     }
+    // Jobs waiting out a rate limit start again by themselves.
+    const next = this.db
+      .prepare("SELECT MIN(run_after) AS at FROM ai_jobs WHERE status = 'queued' AND run_after > ?")
+      .get(nowIso()) as { at: string | null };
+    if (next.at) this.wakeAt(Date.parse(next.at));
     this.notifyIdle();
+  }
+
+  private wakeAt(ms: number): void {
+    if (this.timer && this.timerAt <= ms) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timerAt = ms;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this.kick();
+    }, Math.max(0, ms - Date.now()));
+    this.timer.unref();
+  }
+
+  /**
+   * A rate limit or "too busy" answer: put the job back in the queue to run again
+   * after the wait the provider asked for, and hold back other jobs meanwhile.
+   * Returns false when it has already tried too often.
+   */
+  private postpone(job: JobRow, err: unknown): boolean {
+    const wait = retryWait(err);
+    if (!wait || job.attempts >= MAX_ATTEMPTS) return false;
+    const waitMs = this.retryDelayMs ?? wait.waitMs;
+    const at = Date.now() + waitMs;
+    this.db
+      .prepare("UPDATE ai_jobs SET status = 'queued', started_at = NULL, run_after = ?, error = ? WHERE id = ?")
+      .run(new Date(at).toISOString(), `${wait.note} Trying again automatically.`, job.id);
+    this.pausedUntil = Math.max(this.pausedUntil, at);
+    return true;
   }
 
   private notifyIdle(): void {
@@ -211,6 +266,11 @@ export class JobRunner {
         this.finish(job.id, 'done', out.model, out.usage);
       }
     } catch (err) {
+      if (this.stopped) return; // shutting down: leave it "running" so start() re-queues it
+      if (this.postpone(job, err)) {
+        console.warn(`AI ${job.kind} job ${job.id} postponed (attempt ${job.attempts}):`, err instanceof Error ? err.message : err);
+        return;
+      }
       const message = friendlyAiError(err);
       console.error(`AI ${job.kind} job ${job.id} failed:`, err);
       this.finish(job.id, 'error', model, null, message);
@@ -241,6 +301,7 @@ export class JobRunner {
       configured: this.configured,
       model: this.model(settings.ai_model) ?? settings.ai_model,
       providers: availableProviders(this.clients),
+      paused_until: this.pausedUntil > Date.now() ? new Date(this.pausedUntil).toISOString() : null,
       queued: counts.queued ?? 0,
       running: counts.running ?? 0,
       failed_recent: counts.failed ?? 0,

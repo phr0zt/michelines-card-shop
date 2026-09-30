@@ -25,6 +25,8 @@ export interface PriceResult {
   comps: PriceComp[];
   sources: PriceSource[];
   model: string;
+  /** An AI estimate made without searching recent sales: recorded, but never used to set asking prices. */
+  estimate?: boolean;
 }
 
 export function savePriceCheck(db: Db, cardId: number, result: PriceResult): PriceCheck {
@@ -36,8 +38,8 @@ export function savePriceCheck(db: Db, cardId: number, result: PriceResult): Pri
     const info = db
       .prepare(
         `INSERT INTO price_checks (card_id, source, currency, low_cents, mid_cents, high_cents, suggested_price_cents,
-           quick_sale_cents, confidence, summary, advice, comps_json, sources_json, model, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           quick_sale_cents, confidence, summary, advice, comps_json, sources_json, model, estimate, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         cardId,
@@ -54,6 +56,7 @@ export function savePriceCheck(db: Db, cardId: number, result: PriceResult): Pri
         JSON.stringify(result.comps),
         JSON.stringify(result.sources),
         result.model,
+        result.estimate ? 1 : 0,
         now,
       );
     if (result.mid_cents !== null) {
@@ -70,17 +73,17 @@ export function savePriceCheck(db: Db, cardId: number, result: PriceResult): Pri
         result.confidence,
         now,
         now,
-        card.asking_price_cents === null ? result.suggested_price_cents : null,
-        card.floor_price_cents === null ? result.quick_sale_cents : null,
+        card.asking_price_cents === null && !result.estimate ? result.suggested_price_cents : null,
+        card.floor_price_cents === null && !result.estimate ? result.quick_sale_cents : null,
         cardId,
       );
       const range =
         result.low_cents !== null && result.high_cents !== null
           ? ` (range ${money(result.low_cents)}–${money(result.high_cents)})`
           : '';
-      const who = result.source === 'ai' ? 'AI market research' : 'Manual price check';
+      const who = result.source === 'manual' ? 'Manual price check' : result.estimate ? 'AI estimate (no live search)' : 'AI market research';
       logActivity(db, cardId, 'value', `${who}: worth about ${money(result.mid_cents)}${range}`);
-      if (card.asking_price_cents === null && result.suggested_price_cents !== null) {
+      if (card.asking_price_cents === null && result.suggested_price_cents !== null && !result.estimate) {
         logActivity(db, cardId, 'price', `Asking price set to ${money(result.suggested_price_cents)} (suggested)`);
       }
     } else {

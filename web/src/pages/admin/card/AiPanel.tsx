@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, RefreshCw, SearchCheck, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { CardDetail } from '@shared/types';
+import type { AiJob, CardDetail } from '@shared/types';
 import { Button } from '../../../components/ui/Button';
 import { Alert, Badge, Spinner } from '../../../components/ui/Feedback';
 import { Menu } from '../../../components/ui/Menu';
@@ -77,18 +77,8 @@ export function AiPanel({ card }: { card: CardDetail }) {
         )}
       </div>
 
-      {identifying && (
-        <div className="flex items-center gap-2 text-sm text-ink-2">
-          <Spinner className="size-4" />
-          {identifying.status === 'queued' ? 'Waiting to identify…' : 'Reading the card photos…'}
-        </div>
-      )}
-      {pricing && (
-        <div className="flex items-center gap-2 text-sm text-ink-2">
-          <Spinner className="size-4" />
-          {pricing.status === 'queued' ? 'Waiting to research prices…' : 'Searching recent sales for prices…'}
-        </div>
-      )}
+      {identifying && <JobProgress job={identifying} waiting="Waiting to identify…" working="Reading the card photos…" />}
+      {pricing && <JobProgress job={pricing} waiting="Waiting to research prices…" working="Searching recent sales for prices…" />}
       {!identifying && card.ai_identified_at && (
         <p className="text-xs text-muted">Identified {fmt.relative(card.ai_identified_at)}.</p>
       )}
@@ -133,6 +123,24 @@ export function AiPanel({ card }: { card: CardDetail }) {
           Research value
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** A queued or running AI job; one that's waiting out a rate limit says why and when it tries again. */
+function JobProgress({ job, waiting, working }: { job: AiJob; waiting: string; working: string }) {
+  const fmt = useFormat();
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 text-sm text-ink-2">
+        <Spinner className="size-4" />
+        {job.status === 'running' ? working : waiting}
+      </div>
+      {job.status === 'queued' && job.retry_at && (
+        <p className="text-xs text-muted">
+          {job.error} Next try at {fmt.time(job.retry_at)}.
+        </p>
+      )}
     </div>
   );
 }

@@ -28,6 +28,8 @@ export interface AppOptions {
   aiClient?: AiClient | null;
   /** Override the Gemini client. When a test passes aiClient without this, Gemini stays off. */
   geminiClient?: GeminiClient | null;
+  /** Tests: wait this many ms (instead of what the provider asks) before retrying a rate-limited AI job. */
+  aiRetryDelayMs?: number;
   aiConcurrency?: number;
   /** Shown to the owner in the admin when data isn't on persistent storage. */
   storageWarning?: string | null;
@@ -74,7 +76,7 @@ export function createApp(opts: AppOptions) {
     claude: opts.aiClient === undefined ? createAiClient() : opts.aiClient,
     gemini: opts.geminiClient !== undefined ? opts.geminiClient : opts.aiClient === undefined ? createGeminiClient() : null,
   };
-  const jobs = new JobRunner(db, images, clients, opts.aiConcurrency ?? 2);
+  const jobs = new JobRunner(db, images, clients, opts.aiConcurrency ?? 2, opts.aiRetryDelayMs);
   const auth = createAuth({
     password: opts.adminPassword,
     secret: opts.sessionSecret || loadOrCreateSecret(opts.dataDir),

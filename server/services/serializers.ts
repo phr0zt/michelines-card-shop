@@ -139,6 +139,7 @@ export function priceCheckFromRow(r: Row): PriceCheck {
     comps: safeJson<PriceComp[]>(r.comps_json, []),
     sources: safeJson<PriceSource[]>(r.sources_json, []),
     model: str(r.model),
+    estimate: Boolean(r.estimate),
     created_at: str(r.created_at),
   };
 }
@@ -150,6 +151,7 @@ export function jobFromRow(r: Row): AiJob {
     kind: str(r.kind) as AiJobKind,
     status: str(r.status) as AiJobStatus,
     error: strOrNull(r.error),
+    retry_at: r.status === 'queued' ? strOrNull(r.run_after) : null,
     created_at: str(r.created_at),
     started_at: strOrNull(r.started_at),
     finished_at: strOrNull(r.finished_at),

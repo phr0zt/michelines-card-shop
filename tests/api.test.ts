@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import Anthropic from '@anthropic-ai/sdk';
 import { ApiError, type GenerateContentConfig, type GenerateContentParameters, type Part } from '@google/genai';
 import type { AiClient, GeminiClient } from '../server/services/ai/client';
 import { makeJpeg, makeTestApp, PASSWORD } from './helpers';
@@ -631,8 +632,19 @@ describe('AI jobs', () => {
     expect(calls).toBe(4);
   });
 
-  function fakeGemini(opts: { rejectSchemaWithTools?: boolean; error?: ApiError } = {}) {
+  function fakeGemini(
+    opts: {
+      rejectSchemaWithTools?: boolean;
+      /** Thrown on every call. */
+      error?: ApiError;
+      /** Thrown on the first N calls, then calls succeed. */
+      failFirst?: { error: ApiError; times: number };
+      /** Google Search isn't on the key (free tier): searches get a bare 429. */
+      noSearch?: boolean;
+    } = {},
+  ) {
     const calls: GenerateContentParameters[] = [];
+    let failures = 0;
     const report = {
       found_data: true,
       currency: 'CAD',
@@ -651,7 +663,20 @@ describe('AI jobs', () => {
         generateContent: async (params: GenerateContentParameters) => {
           calls.push(params);
           if (opts.error) throw opts.error;
+          if (opts.failFirst && failures < opts.failFirst.times) {
+            failures++;
+            throw opts.failFirst.error;
+          }
           const config = params.config as GenerateContentConfig;
+          if (opts.noSearch && config.tools) throw geminiError(429, 'You exceeded your current quota, please check your plan and billing details.');
+          if (!config.tools && String(config.systemInstruction).includes('Web search is not available')) {
+            return {
+              text: JSON.stringify({ ...report, confidence: 'medium', summary: 'Raw copies usually sell for $250–$400.' }),
+              candidates: [{ finishReason: 'STOP' }],
+              usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 300 },
+              modelVersion: params.model,
+            };
+          }
           if (!config.tools) {
             return {
               text: JSON.stringify(MCDAVID),
@@ -687,9 +712,32 @@ describe('AI jobs', () => {
     return { client: client as unknown as GeminiClient, calls };
   }
 
-  async function geminiSetup(gemini: GeminiClient, claude: AiClient | null = null) {
-    t = makeTestApp(claude, { geminiClient: gemini });
+  async function geminiSetup(gemini: GeminiClient, claude: AiClient | null = null, aiRetryDelayMs = 30) {
+    t = makeTestApp(claude, { geminiClient: gemini, aiRetryDelayMs });
     return { app: t, agent: await t.login() };
+  }
+
+  /** An error shaped like the Gemini SDK's: the API's JSON error body as the message. */
+  function geminiError(status: number, message: string, details: unknown[] = []) {
+    return new ApiError({ message: JSON.stringify({ error: { code: status, message, status: 'RESOURCE_EXHAUSTED', details } }), status });
+  }
+
+  function quotaDetails(quotaId: string, limit: number, retryDelay?: string) {
+    return [
+      { '@type': 'type.googleapis.com/google.rpc.Help', links: [] },
+      {
+        '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+        violations: [
+          {
+            quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+            quotaId,
+            quotaDimensions: { location: 'global', model: 'gemini-3.8-flash' },
+            quotaValue: String(limit),
+          },
+        ],
+      },
+      ...(retryDelay ? [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }] : []),
+    ];
   }
 
   it('identifies and prices with Gemini when only a Gemini key is set', async () => {
@@ -772,6 +820,102 @@ describe('AI jobs', () => {
     expect(calls).toHaveLength(1);
     const after = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
     expect(after.jobs[0].error).toBe('The Gemini API key was rejected. Check GEMINI_API_KEY on the server.');
+  });
+
+  it('waits out Gemini’s per-minute limit and tries again by itself', async () => {
+    const perMinute = geminiError(
+      429,
+      'You exceeded your current quota.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 5, model: gemini-3.8-flash\nPlease retry in 13.6s.',
+      quotaDetails('GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 5, '13s'),
+    );
+    const { client, calls } = fakeGemini({ failFirst: { error: perMinute, times: 2 } });
+    const { agent, app } = await geminiSetup(client, null, 500);
+    const card = await createCard(agent);
+    await agent.post(`/api/cards/${card.id}/identify`).send({ then_price: false }).expect(202);
+
+    // After the first 429 the job is back in the queue with a note and a retry time.
+    let waiting: { status: string; retry_at: string | null; error: string | null } | undefined;
+    for (let i = 0; i < 50 && !waiting?.retry_at; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      waiting = (await agent.get(`/api/cards/${card.id}`).expect(200)).body.jobs[0];
+    }
+    expect(waiting?.status).toBe('queued');
+    expect(waiting?.error).toMatch(/5 requests a minute for gemini-3.8-flash/);
+    expect((await agent.get('/api/ai/status').expect(200)).body.paused_until).toBeTruthy();
+
+    await app.ctx.jobs.whenIdle();
+    expect(calls).toHaveLength(3);
+    const after = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
+    expect(after.player).toBe('Connor McDavid');
+    expect(after.jobs[0]).toMatchObject({ status: 'done', retry_at: null });
+  });
+
+  it('stops at Gemini’s daily limit and says when it resets', async () => {
+    const daily = geminiError(
+      429,
+      'You exceeded your current quota.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.8-flash',
+      quotaDetails('GenerateRequestsPerDayPerProjectPerModel-FreeTier', 20),
+    );
+    const { client, calls } = fakeGemini({ error: daily });
+    const { agent, app } = await geminiSetup(client);
+    const card = await createCard(agent);
+    await agent.post(`/api/cards/${card.id}/identify`).send({ then_price: false }).expect(202);
+    await app.ctx.jobs.whenIdle();
+    expect(calls).toHaveLength(1);
+    const job = (await agent.get(`/api/cards/${card.id}`).expect(200)).body.jobs[0];
+    expect(job.status).toBe('error');
+    expect(job.error).toMatch(/daily limit for gemini-3.8-flash is used up \(20 requests a day\)/);
+    expect(job.error).toMatch(/midnight Pacific/);
+  });
+
+  it('gives a labelled estimate when the Gemini key can’t search (free tier)', async () => {
+    const { client, calls } = fakeGemini({ noSearch: true });
+    const { agent, app } = await geminiSetup(client);
+    const card = await createCard(agent, { status: 'in_stock', player: 'Connor McDavid', year: '2015-16' }, false);
+    await agent.post(`/api/cards/${card.id}/research`).expect(202);
+    await app.ctx.jobs.whenIdle();
+    expect(calls).toHaveLength(2);
+    expect(calls[1].config?.tools).toBeUndefined();
+
+    const after = (await agent.get(`/api/cards/${card.id}`).expect(200)).body;
+    const check = after.price_checks[0];
+    expect(check).toMatchObject({ estimate: true, confidence: 'low', comps: [], sources: [] });
+    expect(check.summary).toMatch(/^Estimate without a live search:/);
+    expect(after.market_value_cents).toBe(32000);
+    expect(after.asking_price_cents).toBeNull();
+    expect(after.floor_price_cents).toBeNull();
+    expect(after.jobs[0].status).toBe('done');
+
+    // The next lookup skips the search that can't work.
+    const other = await createCard(agent, { status: 'in_stock', player: 'Sidney Crosby', year: '2005-06' }, false);
+    await agent.post(`/api/cards/${other.id}/research`).expect(202);
+    await app.ctx.jobs.whenIdle();
+    expect(calls).toHaveLength(3);
+    expect(calls[2].config?.tools).toBeUndefined();
+  });
+
+  it('explains an Anthropic account with no credit', async () => {
+    const noCredit = new Anthropic.BadRequestError(
+      400,
+      { type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' } },
+      '400 Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.',
+      new Headers(),
+    );
+    const client = {
+      beta: {
+        messages: {
+          parse: async () => {
+            throw noCredit;
+          },
+        },
+      },
+    } as unknown as AiClient;
+    const { agent, app } = await setup(client);
+    const card = await createCard(agent);
+    await agent.post(`/api/cards/${card.id}/identify`).send({}).expect(202);
+    await app.ctx.jobs.whenIdle();
+    const job = (await agent.get(`/api/cards/${card.id}`).expect(200)).body.jobs[0];
+    expect(job.error).toMatch(/Anthropic account has no credit left/);
   });
 
   it('explains when AI is not configured', async () => {

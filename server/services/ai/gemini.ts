@@ -5,7 +5,7 @@ import type { Db } from '../../db';
 import type { ImageStore } from '../images';
 import type { GeminiClient } from './client';
 import { emptyUsage, type UsageTotals } from './costs';
-import { AiError, geminiMessage } from './errors';
+import { AiError, geminiBareQuotaError, geminiMessage } from './errors';
 import { IDENTIFY_SYSTEM, IdentificationSchema, identifyInstructions, loadCardPhotos, type IdentifyOptions, type IdentifyOutcome } from './identify';
 import { describeCard, pricingSystemPrompt, ReportSchema, safeUrl, toPriceResult, type PricingOutcome } from './pricing';
 
@@ -130,6 +130,17 @@ function schemaWithToolsRejected(err: unknown): boolean {
   return err instanceof ApiError && err.status === 400 && /schema|mime|json|tool/i.test(geminiMessage(err));
 }
 
+const NO_SEARCH = `
+
+Web search is not available for this request. Estimate from what you already know about this card and its market. Start the summary with "Estimate without a live search:", say it is not based on current sales and may be out of date, use low confidence, and leave comps empty.`;
+
+const ESTIMATE_PREFIX = 'Estimate without a live search:';
+
+// Google Search isn't part of Gemini's free tier: those requests get a bare 429. After seeing one,
+// skip the search for a while instead of spending a request on it every time.
+const SEARCH_RETRY_MS = 30 * 60 * 1000;
+const searchUnavailableUntil = new WeakMap<GeminiClient, number>();
+
 export async function runGeminiPricing(
   client: GeminiClient,
   db: Db,
@@ -143,22 +154,45 @@ export async function runGeminiPricing(
     systemInstruction: pricingSystemPrompt(settings, PRICE_FINISH),
     tools: [{ googleSearch: {} }],
   };
-
-  let response: GenerateContentResponse;
-  try {
-    response = await client.models.generateContent({
+  const estimateOnly = () =>
+    client.models.generateContent({
       model,
       contents: prompt,
-      config: { ...config, responseMimeType: 'application/json', responseJsonSchema: REPORT_SCHEMA },
+      config: {
+        systemInstruction: pricingSystemPrompt(settings, PRICE_FINISH) + NO_SEARCH,
+        responseMimeType: 'application/json',
+        responseJsonSchema: REPORT_SCHEMA,
+      },
     });
-  } catch (err) {
-    if (!schemaWithToolsRejected(err)) throw err;
-    // Ask for the same JSON in plain text instead.
-    response = await client.models.generateContent({
-      model,
-      contents: `${prompt}\n\nReply with only the JSON object, matching this JSON Schema:\n${JSON.stringify(REPORT_SCHEMA)}`,
-      config,
-    });
+
+  let response: GenerateContentResponse;
+  let searched = true;
+  if ((searchUnavailableUntil.get(client) ?? 0) > Date.now()) {
+    searched = false;
+    response = await estimateOnly();
+  } else {
+    try {
+      response = await client.models.generateContent({
+        model,
+        contents: prompt,
+        config: { ...config, responseMimeType: 'application/json', responseJsonSchema: REPORT_SCHEMA },
+      });
+    } catch (err) {
+      if (geminiBareQuotaError(err)) {
+        searchUnavailableUntil.set(client, Date.now() + SEARCH_RETRY_MS);
+        searched = false;
+        response = await estimateOnly();
+      } else if (schemaWithToolsRejected(err)) {
+        // Ask for the same JSON in plain text instead.
+        response = await client.models.generateContent({
+          model,
+          contents: `${prompt}\n\nReply with only the JSON object, matching this JSON Schema:\n${JSON.stringify(REPORT_SCHEMA)}`,
+          config,
+        });
+      } else {
+        throw err;
+      }
+    }
   }
   const usage = emptyUsage();
   addGeminiUsage(usage, response);
@@ -172,5 +206,14 @@ export async function runGeminiPricing(
     if (url && !sources.has(url)) sources.set(url, { title: chunk.web?.title || url, url });
   }
   const servedBy = response.modelVersion || model;
-  return { result: toPriceResult(parsed.data, sources, settings, servedBy), usage, model: servedBy };
+  const result = toPriceResult(parsed.data, sources, settings, servedBy);
+  if (!searched) {
+    // Only what the model remembers: say so, never pass it off as researched, and don't set asking prices from it.
+    result.estimate = true;
+    result.confidence = 'low';
+    result.comps = [];
+    result.sources = [];
+    if (!result.summary.startsWith(ESTIMATE_PREFIX)) result.summary = `${ESTIMATE_PREFIX} ${result.summary}`.trim();
+  }
+  return { result, usage, model: servedBy };
 }

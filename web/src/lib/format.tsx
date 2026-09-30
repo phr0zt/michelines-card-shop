@@ -30,6 +30,7 @@ export function useFormat() {
     const dateFmt = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric' });
     const shortDateFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' });
     const dateTimeFmt = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
+    const timeFmt = new Intl.DateTimeFormat(locale, { timeStyle: 'short' });
     const numberFmt = new Intl.NumberFormat(locale);
     const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
     return {
@@ -44,6 +45,7 @@ export function useFormat() {
       date: (value: string | null | undefined) => (value ? dateFmt.format(parseDate(value)) : '—'),
       shortDate: (value: string | null | undefined) => (value ? shortDateFmt.format(parseDate(value)) : '—'),
       dateTime: (value: string | null | undefined) => (value ? dateTimeFmt.format(parseDate(value)) : '—'),
+      time: (value: string | null | undefined) => (value ? timeFmt.format(parseDate(value)) : '—'),
       relative: (value: string | null | undefined) => {
         if (!value) return '—';
         const diffMs = parseDate(value).getTime() - Date.now();
