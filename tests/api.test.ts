@@ -78,7 +78,7 @@ describe('cards', () => {
   it('creates a card with photos, a SKU and thumbnails on disk', async () => {
     const { agent } = await setup();
     const card = await createCard(agent);
-    expect(card.sku).toBe('MC-00001');
+    expect(card.sku).toBe('CS-00001');
     expect(card.status).toBe('draft');
     expect(card.images).toHaveLength(2);
     expect(card.front_image.urls.sm).toMatch(/^\/media\/[a-f0-9]{2}\/[a-f0-9]{32}_sm\.jpg$/);

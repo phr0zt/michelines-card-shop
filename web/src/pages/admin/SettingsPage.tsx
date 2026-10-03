@@ -205,7 +205,7 @@ export default function SettingsPage() {
                 label="Inventory code prefix"
                 value={values.sku_prefix}
                 onChange={(e) => set('sku_prefix', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
-                hint="New cards get codes like MC-00042. Existing codes don’t change."
+                hint="New cards get codes like CS-00042. Existing codes don’t change."
               />
             </div>
           )}

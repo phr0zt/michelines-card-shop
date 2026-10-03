@@ -105,7 +105,7 @@ describe('search', () => {
   it('matches hobby shorthand', () => {
     const text = buildSearchText({
       ...card,
-      sku: 'MC-00001',
+      sku: 'CS-00001',
       location_binder: 'Binder 3',
       location_page: '12',
       location_slot: '4',
@@ -116,7 +116,7 @@ describe('search', () => {
     for (const term of tokenizeQuery('gretzky opc 79 rc psa8 "binder 3"')) {
       expect(text.includes(term)).toBe(true);
     }
-    const shopText = buildPublicSearchText({ ...card, sku: 'MC-00001' });
+    const shopText = buildPublicSearchText({ ...card, sku: 'CS-00001' });
     expect(shopText).toContain('gretzky');
     expect(shopText).not.toContain('binder');
   });
@@ -127,7 +127,7 @@ describe('migrations', () => {
     const db = openDb(':memory:');
     db.prepare(
       `INSERT INTO cards (sku, status, created_at, updated_at, player, notes, location_binder)
-       VALUES ('MC-00001', 'in_stock', '2026-01-01', '2026-01-01', 'Wayne Gretzky', 'from Tremblay', 'Blue')`,
+       VALUES ('CS-00001', 'in_stock', '2026-01-01', '2026-01-01', 'Wayne Gretzky', 'from Tremblay', 'Blue')`,
     ).run();
     db.exec(`ALTER TABLE cards DROP COLUMN public_search_text; DELETE FROM schema_migrations WHERE version = 2;`);
     migrate(db);

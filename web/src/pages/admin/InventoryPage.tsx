@@ -181,7 +181,7 @@ export default function InventoryPage() {
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search: gretzky opc 79, young guns, binder 3, MC-00042…"
+              placeholder="Search: gretzky opc 79, young guns, binder 3, CS-00042…"
               className="pl-9"
               aria-label="Search cards"
             />

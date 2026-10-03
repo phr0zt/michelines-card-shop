@@ -4,7 +4,7 @@ import { clientIp } from './clientIp';
 import { HttpError } from './http';
 import { createRateLimiter } from './rateLimit';
 
-const COOKIE = 'mcs_session';
+const COOKIE = 'cs_session';
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function parseCookies(header: string | undefined): Record<string, string> {

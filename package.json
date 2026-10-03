@@ -1,6 +1,6 @@
 {
-  "name": "michelines-card-shop",
-  "version": "0.1.0",
+  "name": "card-shop",
+  "version": "1.0.0",
   "private": true,
   "description": "Trading card inventory, cross-listing tracker, AI card identification, storefront and sales analytics.",
   "type": "module",

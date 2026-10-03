@@ -3,7 +3,7 @@
   "short_name": "Card Shop",
   "start_url": "/admin",
   "display": "standalone",
-  "background_color": "#f4f3ef",
-  "theme_color": "#1c5cab",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
 }

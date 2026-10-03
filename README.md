@@ -1,6 +1,6 @@
-# Micheline's Card Shop
+# Card Shop
 
-Inventory, cross-listing tracker and online shop for hockey, baseball and other trading cards kept in binders.
+Inventory, cross-listing tracker, AI card identification and a clean online shop for hockey, baseball and other trading cards kept in binders. White-label: name it, brand it and deploy it as your own shop in a few minutes.
 
 Photograph the front and back of a card. The AI reads it, fills in the details, looks up what it sells for, and creates an **index card** for it. That index card tracks where the card lives (binder, page, slot), every place it's posted (eBay, Kijiji, Facebook, Whatnot…) and at what price, who asked about it, and what it sold for. A dashboard shows profit, sales by platform and anything that needs attention.
 
@@ -18,7 +18,15 @@ Photograph the front and back of a card. The AI reads it, fills in the details, 
 | **Dashboard & reports** | Profit, sales, fees, sell-through, days to sell, inventory value over time, best platforms, categories, most valuable cards and price movers. Monthly profit & loss for your books, CSV exports and a full database backup. |
 | **Online shop** | A public page at `/` listing the cards you choose, with photos (front and back), prices and an "ask about this card / make an offer" form. |
 | **Printing** | Full-page printable index cards, and sleeve labels with a QR code that opens the card (30 per sheet, like Avery 5160). |
-| **Search** | Search by anything, including hobby shorthand: `gretzky opc 79 rc`, `young guns`, `psa 10`, `binder 3`, `MC-00042`. Filter by status, category, binder, "posted on" or "not yet posted on" a platform, graded, rookies and more. |
+| **Search** | Search by anything, including hobby shorthand: `gretzky opc 79 rc`, `young guns`, `psa 10`, `binder 3`, `CS-00042`. Filter by status, category, binder, "posted on" or "not yet posted on" a platform, graded, rookies and more. |
+
+## Make it yours
+
+The shop ships with a clean white, monochrome look (dark mode is one click away in the admin menu). To brand it:
+
+1. Set `STORE_NAME` (and optionally `STORE_TAGLINE`, `SKU_PREFIX`, `STORE_CURRENCY`, `STORE_LOCALE`, `STORE_TIME_ZONE`) before the first start, so a new deploy is branded right away. Everything can also be changed later in **Settings**; what's saved there wins.
+2. Replace `web/public/favicon.svg` with your logo. It's used as the shop header logo, browser icon and app icon.
+3. The accent colour is one token in `web/src/styles.css` (`--primary`, near-black by default). Change it and every button, link and chart follows.
 
 ## Everyday workflow
 
@@ -53,7 +61,7 @@ npm run dev:demo      # runs the app on that sample data instead of your real da
 
 The repo includes a `Dockerfile`, so any host that runs Docker works. On [Railway](https://railway.com):
 
-1. **New project → Deploy from GitHub repo** → pick this repository. Railway finds the Dockerfile.
+1. **New project → Deploy from GitHub repo** → pick this repository. Railway reads `railway.json` (Dockerfile build, `/api/health` health check).
 2. **Add a volume** to the service with mount path **`/data`**. This is where the database and photos are stored. Without a volume, everything is lost when the app redeploys.
 3. **Variables:**
    - `ADMIN_PASSWORD` — a strong password for `/admin` (required)
@@ -72,6 +80,10 @@ Other hosts: build the image (`docker build -t card-shop .`), run it with a pers
 | `ADMIN_PASSWORD` | yes | Password for the admin area. Changing it signs everyone out. |
 | `ANTHROPIC_API_KEY` | for AI | Turns on card identification and price research with Claude. |
 | `GEMINI_API_KEY` | for AI | Turns on card identification and price research with Google Gemini (a Google AI Studio key). Used automatically when it's the only AI key. |
+| `STORE_NAME` | no | Shop name on a fresh install (default “Card Shop”). |
+| `STORE_TAGLINE` | no | Line under the name (default “Hockey, baseball & trading cards”). |
+| `SKU_PREFIX` | no | Prefix for new card codes, e.g. `CS` → `CS-00042`. |
+| `STORE_CURRENCY` / `STORE_LOCALE` / `STORE_TIME_ZONE` | no | First-run defaults: `CAD`, `en-CA`, `America/Toronto`. |
 | `DATA_DIR` | no | Where the database and photos live. Default: the attached Railway volume if there is one, otherwise `/data` in Docker or `./data` locally. |
 | `PORT` | no | HTTP port (default 3001). |
 | `SESSION_SECRET` | no | Signs login cookies. Generated and saved in `DATA_DIR` if not set. |

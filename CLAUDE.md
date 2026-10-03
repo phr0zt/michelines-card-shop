@@ -1,6 +1,6 @@
 # Notes for working on this repo
 
-Trading-card inventory + cross-listing tracker + public shop. See README.md for features and setup.
+White-label trading-card inventory + cross-listing tracker + public shop (brand via `STORE_*` env vars / Settings). See README.md for features and setup.
 
 ## Commands
 

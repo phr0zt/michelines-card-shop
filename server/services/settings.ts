@@ -4,18 +4,23 @@ import type { Settings } from '../../shared/types';
 import type { Db } from '../db';
 import { isTimeZone, setTimeZone } from '../lib/time';
 
+// STORE_NAME / STORE_TAGLINE / SKU_PREFIX / STORE_CURRENCY / STORE_LOCALE / STORE_TIME_ZONE
+// set the first-run defaults for a new shop, so a fresh deploy is branded before
+// anyone opens Settings. Anything saved in Settings wins over these.
+const env = (key: string, fallback: string) => process.env[key]?.trim() || fallback;
+
 export const DEFAULT_SETTINGS: Settings = {
-  store_name: "Micheline's Card Shop",
-  store_tagline: 'Hockey, baseball & trading cards',
+  store_name: env('STORE_NAME', 'Card Shop'),
+  store_tagline: env('STORE_TAGLINE', 'Hockey, baseball & trading cards'),
   store_intro:
     'Browse the cards we have for sale. Send a message to ask a question, make an offer, or arrange pickup or shipping.',
   contact_email: '',
   contact_phone: '',
   pickup_location: '',
-  currency: 'CAD',
-  locale: 'en-CA',
+  currency: env('STORE_CURRENCY', 'CAD').toUpperCase(),
+  locale: env('STORE_LOCALE', 'en-CA'),
   usd_exchange_rate: 1.37,
-  sku_prefix: 'MC',
+  sku_prefix: env('SKU_PREFIX', 'CS'),
   storefront_enabled: true,
   storefront_show_prices: true,
   shipping_note: 'Ships in a penny sleeve and top loader inside a team bag, in a padded envelope.',
@@ -27,7 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ai_max_searches: 5,
   stale_listing_days: 30,
   high_value_cents: 5000,
-  time_zone: 'America/Toronto',
+  time_zone: env('STORE_TIME_ZONE', 'America/Toronto'),
 };
 
 const text = (max: number) => z.string().trim().max(max);

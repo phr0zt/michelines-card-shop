@@ -1,12 +1,16 @@
 /**
  * Fills a data folder with sample cards so you can try the app without
- * photographing anything. Photos are drawn, not real scans; prices are made up.
+ * photographing anything. Most photos are drawn placeholders, not scans of real
+ * cards, and prices are made up. The Jason Moss minor-hockey cards are real photos
+ * (scripts/demo-assets/) from the author's own collection, shown with permission.
  *
  *   DATA_DIR=./demo-data npx tsx scripts/seed-demo.ts
  *
  * Refuses to touch a database that already has cards unless you pass --force.
  */
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import type { CardFields } from '../shared/types';
 import { openDb, type Db } from '../server/db';
@@ -30,6 +34,8 @@ if (existing > 0 && !process.argv.includes('--force')) {
   console.error(`${dataDir} already has ${existing} cards. Pass --force to add demo cards anyway.`);
   process.exit(1);
 }
+
+const assetsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-assets');
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
@@ -68,6 +74,22 @@ interface Demo {
   history?: number[];
   cost?: number;
 }
+
+/** Real cards photographed front and back; they lead the shop as featured cards. */
+const photoDemos: { fields: Partial<CardFields>; photos: string; value: [number, number, number] }[] = [
+  {
+    fields: { category: 'Hockey', player: 'Jason Moss', team: 'Les Éperviers de Hull', year: '1995-96', brand: 'Local Issue', set_name: 'Les Éperviers de Hull', card_number: '3', condition: 'Near Mint', condition_notes: 'Light corner softening and edge wear on the front. Clean surface.', location_binder: 'Keepsakes', title: '1995-96 Les Éperviers de Hull #3 Jason Moss Minor Hockey Card', description: 'A team-issued minor hockey card from Hull, Québec. Local issues like this were printed in tiny runs for the players and their families, so they rarely turn up for sale.', tags: 'minor hockey, local issue' },
+    photos: 'jason-moss-3', value: [100, 300, 500],
+  },
+  {
+    fields: { category: 'Hockey', player: 'Jason Moss', team: 'M.A.H.G. de Hull', year: '1994-95', brand: 'Photomania', set_name: 'M.A.H.G. de Hull', condition: 'Near Mint', location_binder: 'Keepsakes', title: '1994-95 M.A.H.G. de Hull Jason Moss Minor Hockey Card (Photomania)', description: 'Minor hockey player card from Hull, Québec, printed by Photomania in Gatineau. The back lists the player’s stats in French — category, height, weight, shot and favourite player (Patrick Roy).', tags: 'minor hockey, local issue' },
+    photos: 'jason-moss-4', value: [100, 300, 500],
+  },
+  {
+    fields: { category: 'Hockey', player: 'Jason Moss', team: 'M.A.H.G. de Hull', year: '1993-94', brand: 'Pro-Sport Photo', set_name: 'Collection 93-94', subset: 'Édition Spéciale LeDroit', condition: 'Near Mint', location_binder: 'Keepsakes', title: '1993-94 Pro-Sport Photo Collection Édition Spéciale LeDroit Jason Moss', description: 'Pro-Sport Photo “Collection 93-94” minor hockey card, a special edition made with the Ottawa–Gatineau newspaper LeDroit.', tags: 'minor hockey, local issue' },
+    photos: 'jason-moss-5', value: [100, 300, 500],
+  },
+];
 
 const demos: Demo[] = [
   {
@@ -131,6 +153,17 @@ async function run(db: Db) {
     description: 'Two binders of 80s–90s hockey',
     total_cost_cents: 45000,
   });
+
+  const photoIds: number[] = [];
+  for (const d of photoDemos) {
+    const id = createCard(db, { ...d.fields, status: 'in_stock', is_public: true, featured: true });
+    for (const side of ['front', 'back'] as const) {
+      addImage(db, id, side, await images.save(await readFile(path.join(assetsDir, `${d.photos}-${side}.jpg`))), false, images);
+    }
+    const [low, mid, high] = d.value;
+    savePriceCheck(db, id, { source: 'ai', currency: 'CAD', low_cents: low, mid_cents: mid, high_cents: high, suggested_price_cents: null, quick_sale_cents: null, confidence: 'low', summary: 'Demo data — local minor-hockey issues almost never sell publicly, so this is a rough estimate.', advice: 'Keep it, or ask for offers from collectors of Outaouais minor hockey.', comps: [], sources: [], model: 'demo' });
+    photoIds.push(id);
+  }
 
   const ids: number[] = [];
   for (const [i, d] of demos.entries()) {
@@ -230,7 +263,7 @@ async function run(db: Db) {
 
   // Backdate "created" so the dashboard's cards-added series has history.
   ids.forEach((id, i) => db.prepare('UPDATE cards SET created_at = ? WHERE id = ?').run(new Date(Date.now() - (200 - i * 12) * 86_400_000).toISOString(), id));
-  for (const id of ids) recomputeStatus(db, id);
+  for (const id of [...photoIds, ...ids]) recomputeStatus(db, id);
 
   // A year of inventory value snapshots.
   recordValueSnapshot(db);
@@ -248,7 +281,7 @@ async function run(db: Db) {
   const draft = createCard(db, { category: 'Hockey', player: 'Teemu Selanne', team: 'Winnipeg Jets', year: '1992-93', brand: 'Upper Deck', set_name: 'Upper Deck', card_number: '586', is_rookie: true, condition: 'Near Mint', location_binder: 'Blue binder', location_page: '2', location_slot: '1' });
   addImage(db, draft, 'front', await images.save(await drawCard({ name: 'Teemu Selanne', line2: '1992-93 Upper Deck', team: 'Winnipeg Jets', color: '#041e42', accent: '#ac162c', number: '586' })), false, images);
   db.prepare('UPDATE cards SET ai_identified_at = ?, ai_confidence = 0.7, ai_notes = ? WHERE id = ?').run(nowIso(), 'Unsure about: whether this is the base card or the Calder Candidate insert.', draft);
-  console.log(`Seeded ${ids.length + 1} demo cards into ${dataDir}`);
+  console.log(`Seeded ${photoIds.length + ids.length + 1} demo cards into ${dataDir}`);
 }
 
 await run(db);
